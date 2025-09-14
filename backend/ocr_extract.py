@@ -10,3 +10,6 @@ def extract_text_from_image(image_path: str) -> str:
 if __name__ == "__main__":
     text = extract_text_from_image("data/sample_note.jpeg")
     print(text)
+    with open("data/sample_note.txt", "w") as f:
+        f.write(text)
+    print("Saved OCR output to data/sample_note.txt")

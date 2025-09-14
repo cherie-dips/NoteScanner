@@ -1,0 +1,4 @@
+{
+  // Use the Python 3.11 interpreter from your venv
+  "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python"
+}

@@ -1,0 +1,46 @@
+* BABIC Notation3 2 Operations of Languages
+
+# Des: Alphabet, =
+— AN alphabet, typically denoted by S, i6 a finite, nonempty eet of Symbols.
+
+—
+
+= =10,13
+
+% Dep: Btring
+
+— PF atring over an alphabet = 18 a finite eequence of Symbols from =, where
+repetition of Symbols iS allowed.
+
+—
+
+41,0, 214, LOL01 , LOOOOOL
+
+« Empty Btring, € > 16 a otring Of length © over =.
+
+# Remark:
+
+let g denote the empty eet. Te digberence bet? PFE is that # iS a oet
+
+without any elements 3 € is a String Without having any Symbol .
+
+{gl=0
+aa)
+fgesl=en
+
+—> THE Get of All finite strings over Z, denoted by =* is detined a8:
+
+co
+s*=-U si , Sizeet of all otrings over = of length L.
+L=0
+
+* Exerauée:
+
+1, Cordinolity of UI* =INI = countably inginite
+
+a. Candinality Q§ 30,43%= Zo=€ = 9°
+Sve 1o,13 Sce
+Fa = X00, 41, O41, 103 = Q™
+Ze = 2000, 434,010, 401, O44, 110,001, 1003 =Q°
+
+I10,23¥1= N= countably inginite

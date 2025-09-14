@@ -1,5 +1,12 @@
 langchain
-openai
+langchain-community
+langchain-redis
+langchain_groq
 redis
 pytesseract
 pillow
+python-dotenv
+transformers
+torch
+sentence-transformers
+chromadb
