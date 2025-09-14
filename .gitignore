@@ -1,1 +1,18 @@
+# Ignore virtual environments
+venv/
+.venv/
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore environment files
 .env
+
+# Ignore large ML binaries
+*.dylib
+*.so
+*.pkl
+*.onnx
+*.pt
+*.pth
