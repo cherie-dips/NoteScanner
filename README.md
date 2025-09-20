@@ -1,186 +1,81 @@
-# 🚀 NoteScanner Integrated Pipeline
+# NoteScanner
 
-## ✅ **Fixed Issues & Improvements**
+## Overview
+NoteScanner is an end-to-end pipeline for uploading, extracting, embedding, and querying notes using OCR, ChromaDB, and Groq LLM. It features a FastAPI backend and a React/Vite frontend, orchestrated with Docker Compose.
 
-### **1. Unified API (`unified_api.py`)**
-- **Single endpoint** for all operations
-- **Automatic text extraction** and embedding after file upload
-- **Consistent collection naming** using subject-based collections
-- **Error handling** and proper HTTP status codes
-- **Real-time processing** with progress feedback
+![NoteScanner Demo](noteScanner.png)
 
-### **2. Streamlined Workflow**
-```
-File Upload → Auto Text Extraction → Auto Embedding → Ready for Query
-```
+## Prerequisites
+- Docker & Docker Compose
+- Python 3.10+
+- Node.js 20+
+- (Optional) Redis for advanced vector search
 
-### **3. Frontend Integration**
-- **Updated FileUpload** component to use new `/upload_and_process` endpoint
-- **Added QueryInterface** component for interactive querying
-- **Real-time feedback** on processing status
+## Quick Start (Recommended: Docker Compose)
 
----
+1. **Clone the repository:**
+	```sh
+	git clone <your-repo-url>
+	cd NoteScanner
+	```
 
-## 🔄 **Complete Pipeline Flow**
+2. **Set up environment variables:**
+	- Add your `GROQ_API_KEY`.
 
-### **Phase 1: File Upload & Processing**
-1. **Upload**: User uploads file via frontend
-2. **Auto-Extract**: Text automatically extracted (OCR for images, PyMuPDF for PDFs)
-3. **Auto-Embed**: Text chunked and embedded using SentenceTransformer
-4. **Auto-Store**: Embeddings stored in ChromaDB with subject-based collections
-5. **Feedback**: User gets confirmation with chunk count
+3. **Build and run all services:**
+	```sh
+	docker-compose up --build
+	```
+	- Backend: http://localhost:8000
+	- Frontend: http://localhost:5173
 
-### **Phase 2: Query Processing**
-1. **Query Input**: User submits query with subject
-2. **Retrieval**: Similar chunks retrieved from ChromaDB
-3. **Context Building**: Retrieved chunks passed to LLM
-4. **Answer Generation**: Groq LLM generates answer
-5. **Response**: Answer + source documents returned
+## Manual Setup (Dev Mode)
 
----
+### Backend
+1. Create and activate a Python virtual environment:
+	```sh
+	python3 -m venv venv
+	source venv/bin/activate
+	pip install -r requirements.txt
+	```
+2. Set up `.env` with your API keys.
+3. Start the backend:
+	```sh
+	uvicorn backend.api:app --host 0.0.0.0 --port 8000
+	```
 
-## 🛠 **API Endpoints**
+### Frontend
+1. Install dependencies:
+	```sh
+	cd frontend/my-app
+	npm install
+	```
+2. Start the frontend:
+	```sh
+	npm run dev -- --host
+	```
+3. Access at http://localhost:5173
 
-### **File Management**
-- `POST /create_folder` - Create subject folders
-- `POST /upload_and_process` - Upload file with auto-processing
-- `POST /extract_and_ingest_folder` - Process all files in a folder
-- `GET /list_tree` - List folder structure
+## Workflow
+1. **Create folders and upload notes (PDFs/images) via frontend.**
+2. **Backend extracts text (OCR for images, PyMuPDF for PDFs) and saves `.txt` files.**
+3. **Extracted text is chunked and embedded using SentenceTransformer, stored in ChromaDB.**
+4. **Query your notes by subject and question.**
+	- Backend retrieves relevant chunks and uses Groq LLM to answer.
 
-### **Query & Search**
-- `POST /query` - Query notes using RAG
-- `GET /collections` - List all ChromaDB collections
-- `GET /collection_stats/{subject}` - Get collection statistics
+## Useful Commands
+- **Rebuild containers:**
+  ```sh
+  docker-compose up --build
+  ```
+- **Stop containers:**
+  ```sh
+  docker-compose down
+  ```
 
----
-
-## 🚀 **How to Use**
-
-### **1. Start the System**
-```bash
-# Start all services
-docker-compose up --build
-
-# Or start individually
-# Backend: uvicorn backend.unified_api:app --host 0.0.0.0 --port 8000
-# Frontend: npm run dev (in frontend/my-app/)
-```
-
-### **2. Upload Files**
-1. Open http://localhost:5173
-2. Create a subject folder (e.g., "Science")
-3. Upload files (PDF, images) - they'll be automatically processed
-4. See confirmation with chunk count
-
-### **3. Query Your Notes**
-1. Use the query interface (top-right corner)
-2. Select subject folder
-3. Ask your question
-4. Get AI-powered answers with sources
-
-### **4. Test the Pipeline**
-```bash
-python test_pipeline.py
-```
-
----
-
-## 📊 **Key Features**
-
-### **✅ Automatic Processing**
-- No manual text extraction needed
-- No manual embedding creation
-- One-click file upload with full processing
-
-### **✅ Subject-Based Organization**
-- Files organized by subject folders
-- Separate ChromaDB collections per subject
-- Targeted querying by subject
-
-### **✅ Real-Time Feedback**
-- Processing status updates
-- Chunk count confirmation
-- Error handling with user-friendly messages
-
-### **✅ Source Attribution**
-- Answers include source documents
-- Traceability to original content
-- Confidence in AI responses
-
----
-
-## 🔧 **Technical Details**
-
-### **Text Processing**
-- **Chunking**: 500 characters with 50-character overlap
-- **Embedding**: all-MiniLM-L6-v2 (384 dimensions)
-- **Storage**: ChromaDB with persistent storage
-
-### **Query Processing**
-- **Retrieval**: Top 4 most similar chunks
-- **LLM**: Groq Llama-3.1-8b-instant
-- **Context**: Retrieved chunks as context for LLM
-
-### **File Support**
-- **Images**: PNG, JPG, JPEG, BMP, TIFF (OCR)
-- **PDFs**: Direct text extraction
-- **Text**: Plain text files
-
----
-
-## 🎯 **Query Output Location**
-
-**Answer**: `result["answer"]` in the JSON response
-**Sources**: `result["source_documents"]` array
-**Query**: `result["query"]` (echoed back)
-
-Example response:
-```json
-{
-  "query": "What is photosynthesis?",
-  "answer": "Photosynthesis is the process by which plants...",
-  "source_documents": [
-    {
-      "content": "Photosynthesis occurs in chloroplasts...",
-      "metadata": {...}
-    }
-  ]
-}
-```
-
----
-
-## 🚨 **Troubleshooting**
-
-### **Common Issues**
-1. **No documents found**: Upload and process files first
-2. **Query fails**: Check GROQ_API_KEY environment variable
-3. **Upload fails**: Ensure folder exists before uploading
-4. **Processing slow**: Large files may take time to process
-
-### **Debug Commands**
-```bash
-# Check collections
-curl http://localhost:8000/collections
-
-# Check collection stats
-curl http://localhost:8000/collection_stats/Science
-
-# Test query
-curl -X POST http://localhost:8000/query \
-  -d "subject=Science&query=What is this about?"
-```
-
----
-
-## 🎉 **Success!**
-
-Your NoteScanner now has a **fully integrated pipeline** that:
-- ✅ Automatically processes uploaded files
-- ✅ Creates embeddings and stores them
-- ✅ Provides AI-powered querying
-- ✅ Shows source attribution
-- ✅ Handles errors gracefully
-- ✅ Works with your M4 MacBook Pro ARM64 architecture
-
-**The query output is in `result["answer"]`** - exactly where you need it! 🎯
+## File Structure
+- `backend/` - FastAPI endpoints, extraction, ingestion, query logic
+- `frontend/my-app/` - React/Vite frontend
+- `user_notes/` - Uploaded notes and extracted text (ignored in git)
+- `chroma_storage/` - ChromaDB vector database (ignored in git)
+- `.env` - Secrets and API keys (ignored in git)
