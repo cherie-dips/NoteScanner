@@ -1,18 +1,52 @@
-# Ignore virtual environments
+# ------------------------
+# Python
+# ------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ------------------------
+# Virtual Environments
+# ------------------------
 venv/
 .venv/
 
-# Ignore Python cache
-__pycache__/
-*.pyc
-
-# Ignore environment files
+# ------------------------
+# Environment Variables
+# ------------------------
 .env
 
-# Ignore large ML binaries
+# ------------------------
+# Machine Learning / Binary Files
+# ------------------------
 *.dylib
 *.so
 *.pkl
 *.onnx
 *.pt
 *.pth
+
+# ------------------------
+# IDE / Editor Files
+# ------------------------
+.vscode/
+.idea/
+
+# ------------------------
+# OS Generated Files
+# ------------------------
+.DS_Store
+Thumbs.db
+
+# ------------------------
+# Project-Specific
+# ------------------------
+# Ignore Chroma vector DB and storage
+backend/chroma_storage/
+
+# Ignore sample data files
+backend/data/
+
+# Logs
+*.log
