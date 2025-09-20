@@ -3,7 +3,7 @@
 ## Overview
 NoteScanner is an end-to-end pipeline for uploading, extracting, embedding, and querying notes using OCR, ChromaDB, and Groq LLM. It features a FastAPI backend and a React/Vite frontend, orchestrated with Docker Compose.
 
-![NoteScanner Demo](noteScanner.png)
+![NoteScanner Demo](frontend/my-app/public/noteScanner.png)
 
 ## Prerequisites
 - Docker & Docker Compose
