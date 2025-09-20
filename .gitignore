@@ -1,52 +1,49 @@
-# ------------------------
 # Python
-# ------------------------
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# ------------------------
 # Virtual Environments
-# ------------------------
 venv/
 .venv/
 
-# ------------------------
-# Environment Variables
-# ------------------------
-.env
-
-# ------------------------
-# Machine Learning / Binary Files
-# ------------------------
-*.dylib
-*.so
-*.pkl
-*.onnx
-*.pt
-*.pth
-
-# ------------------------
-# IDE / Editor Files
-# ------------------------
-.vscode/
-.idea/
-
-# ------------------------
-# OS Generated Files
-# ------------------------
-.DS_Store
-Thumbs.db
-
-# ------------------------
-# Project-Specific
-# ------------------------
-# Ignore Chroma vector DB and storage
+# ChromaDB
+chroma_storage/
 backend/chroma_storage/
 
-# Ignore sample data files
-backend/data/
+# User data
+user_notes/
+
+# Node
+node_modules/
+package-lock.json
+
+# System/Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.env
+
+# Machine Learning binaries
+*.pth
+*.pt
+*.h5
+*.ckpt
+*.joblib
+*.pkl
+*.npy
+*.npz
+*.dylib
+*.so
+*.onnx
 
 # Logs
 *.log
+
+# ML output folders
+runs/
+output/
+checkpoints/
+*.tensorboard/

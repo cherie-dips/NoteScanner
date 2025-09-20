@@ -1,8 +1,9 @@
+fastapi
+uvicorn
 langchain
 langchain-community
-langchain-redis
+langchain-chroma
 langchain_groq
-redis
 pytesseract
 pillow
 python-dotenv
@@ -10,3 +11,7 @@ transformers
 torch
 sentence-transformers
 chromadb
+pymupdf
+redis
+langchain-redis
+python-multipart
