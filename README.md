@@ -3,6 +3,8 @@
 ## Overview
 NoteScanner is an end-to-end pipeline for uploading, extracting, embedding, and querying notes using OCR, ChromaDB, and Groq LLM. It features a FastAPI backend and a React/Vite frontend, orchestrated with Docker Compose.
 
+You upload your handwritten notes → the system scans, organizes, and lets you chat with your notes using Retrieval-Augmented Generation (RAG).
+
 ![NoteScanner Demo](frontend/my-app/public/noteScanner.png)
 
 ## Prerequisites
@@ -15,7 +17,7 @@ NoteScanner is an end-to-end pipeline for uploading, extracting, embedding, and 
 
 1. **Clone the repository:**
 	```sh
-	git clone <your-repo-url>
+	git clone https://github.com/cherie-dips/NoteScanner
 	cd NoteScanner
 	```
 
@@ -79,3 +81,6 @@ NoteScanner is an end-to-end pipeline for uploading, extracting, embedding, and 
 - `user_notes/` - Uploaded notes and extracted text (ignored in git)
 - `chroma_storage/` - ChromaDB vector database (ignored in git)
 - `.env` - Secrets and API keys (ignored in git)
+
+## Future Steps
+- Adding a functionality to perform OCR on handwritten PDF documents. 
