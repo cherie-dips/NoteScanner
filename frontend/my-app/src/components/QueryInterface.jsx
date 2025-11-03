@@ -80,7 +80,7 @@ export default function QueryInterface() {
           disabled={loading || !query.trim() || !subject.trim()}
           className="query-submit-btn"
         >
-          {loading ? "🔄 Processing..." : "🚀 Ask Question"}
+          {loading ? "🔄 Processing..." : "Ask Question"}
         </button>
       </form>
 

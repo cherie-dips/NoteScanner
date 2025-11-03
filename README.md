@@ -5,7 +5,7 @@ NoteScanner is an end-to-end pipeline for uploading, extracting, embedding, and 
 
 You upload your handwritten notes → the system scans, organizes, and lets you chat with your notes using Retrieval-Augmented Generation (RAG).
 
-![NoteScanner Demo](frontend/my-app/public/noteScanner.png)
+![NoteScanner Demo](frontend/my-app/public/app-page.png)
 
 ## Prerequisites
 - Docker & Docker Compose
