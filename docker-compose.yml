@@ -1,31 +1,16 @@
 version: "3.9"
 services:
-  redis-stack:
-    image: redis/redis-stack:latest
-    container_name: redis-stack-notescanner
-    ports:
-      - "6379:6379"
-      - "8001:8001"
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-
   backend:
     build: .
     container_name: notescanner-backend
-    depends_on:
-      - redis-stack
     env_file:
       - .env
-    environment:
-      - REDIS_HOST=redis://redis-stack:6379
     ports:
       - "8000:8000"
     volumes:
       - ./user_notes:/app/user_notes
       - ./backend/chroma_storage:/app/backend/chroma_storage
     command: ["uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000"]
-
 
   frontend:
     build:
@@ -42,5 +27,3 @@ services:
       - ./frontend/my-app/index.html:/app/index.html
       - ./frontend/my-app/vite.config.js:/app/vite.config.js
     command: ["npm", "run", "dev", "--", "--host"]
-volumes:
-  redis_data:

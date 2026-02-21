@@ -36,10 +36,24 @@ def create_folder(path: str = Form(""), name: str = Form(...)):
     os.makedirs(folder_path, exist_ok=True)
     return JSONResponse({"message": f"Folder '{name}' created.", "path": folder_path})
 
+
+@app.post("/create_file")
+def create_file(path: str = Form(""), name: str = Form(...)):
+    """Create an empty file in the given path. Uses .txt if name has no extension."""
+    folder_path = os.path.join(NOTES_ROOT, path) if path else NOTES_ROOT
+    if not os.path.exists(folder_path):
+        return JSONResponse({"error": f"Folder '{path}' does not exist."}, status_code=400)
+    filename = name if "." in name else f"{name}.txt"
+    file_path = os.path.join(folder_path, filename)
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write("")
+    return JSONResponse({"message": f"File '{filename}' created.", "path": file_path})
+
+
 @app.post("/upload_note")
-def upload_note(path: str = Form(...), file: UploadFile = File(...)):
-    """Upload a file to a specific folder path and automatically process it."""
-    folder_path = os.path.join(NOTES_ROOT, path)
+def upload_note(path: str = Form(""), file: UploadFile = File(...)):
+    """Upload a file to a specific folder path (or root if path is empty) and automatically process it."""
+    folder_path = os.path.join(NOTES_ROOT, path) if path else NOTES_ROOT
     if not os.path.exists(folder_path):
         return JSONResponse({"error": f"Folder '{path}' does not exist."}, status_code=400)
     

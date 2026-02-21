@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from "../config";
 
 export default function FolderForm({ path, onFolderCreated }) {
   const [name, setName] = useState("");
@@ -11,7 +12,7 @@ export default function FolderForm({ path, onFolderCreated }) {
     formData.append("path", path);
     formData.append("name", name);
 
-    const res = await fetch("http://localhost:8000/create_folder", {
+    const res = await fetch(`${API_BASE}/create_folder`, {
       method: "POST",
       body: formData,
     });

@@ -12,6 +12,4 @@ torch
 sentence-transformers
 chromadb
 pymupdf
-redis
-langchain-redis
 python-multipart

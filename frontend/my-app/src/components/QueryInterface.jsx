@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { API_BASE } from "../config";
 
 export default function QueryInterface() {
   const [query, setQuery] = useState("");
@@ -16,7 +17,7 @@ export default function QueryInterface() {
       formData.append("query", query);
       formData.append("subject", subject);
 
-      const res = await fetch("http://localhost:8000/query_folder", {
+      const res = await fetch(`${API_BASE}/query_folder`, {
         method: "POST",
         body: formData,
       });
