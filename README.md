@@ -21,7 +21,7 @@ You upload your handwritten notes → the system scans, organizes, and lets you 
 
 2. **Set up environment variables** (in `.env` at repo root):
 	- `GROQ_API_KEY` – for AI query (required for RAG).
-	- All data (user accounts, sessions, extracted text, RAG embeddings) is stored in **ChromaDB** under `user_notes/` (no MongoDB).
+	- ChromaDB runs as a Docker service; user accounts, sessions, and RAG embeddings live there. Uploaded files are stored under `user_notes/` (created at runtime, gitignored).
 
 3. **Build and run all services:**
 	```sh
@@ -40,7 +40,7 @@ You upload your handwritten notes → the system scans, organizes, and lets you 
 	pip install -r requirements.txt
 	```
 2. Set up `.env` with your API keys (e.g. `GROQ_API_KEY`).
-3. Start the backend (no separate database service needed; ChromaDB stores everything under `user_notes/`):
+3. Start the backend (with ChromaDB running via Docker, or set `CHROMA_HOST`/`CHROMA_PORT` if Chroma runs elsewhere):
 	```sh
 	uvicorn backend.api:app --host 0.0.0.0 --port 8000
 	```
@@ -57,19 +57,16 @@ You upload your handwritten notes → the system scans, organizes, and lets you 
 	```
 3. Access at http://localhost:5173
 
-## Authentication and data (ChromaDB only)
-- **Single database:** User accounts, sessions, and extracted text are stored in **ChromaDB** (no MongoDB).
-- **Paths:** All ChromaDB data lives under the notes directory:
-  - `user_notes/_chroma/` – global store (users, sessions, extracted text per file).
-  - `user_notes/<user_id>/` – uploaded PDFs and images plus `.txt` extracted files.
-  - `user_notes/<user_id>/chroma/` – RAG embeddings for that user (one collection per folder/subject).
+## Authentication and data
+- **ChromaDB:** User accounts, sessions, and RAG embeddings are stored in a central ChromaDB (Docker service). Per-user collections are named `user_<user_id>_notes`.
+- **Upload storage:** The `user_notes/` directory is created at runtime and holds only uploaded files and extracted `.txt` files under `user_notes/<user_id>/`. It is in `.gitignore` and is not committed. You can delete it locally to free space; the app will recreate it when needed.
 - **Sign up / Sign in:** Email and hashed password are stored in ChromaDB; session IDs are used for auth.
 
 ## Workflow
 1. **Sign up or sign in** on the frontend.
 2. **Create folders and upload notes (PDFs/images).** Files are saved under `user_notes/<user_id>/`; extracted text is stored in ChromaDB and as `.txt` next to the originals.
 3. **Backend extracts text** (OCR for images, PyMuPDF for PDFs), saves `.txt` locally and the full text in ChromaDB.
-4. **Query your notes** by subject; RAG uses the ChromaDB collections under `user_notes/<user_id>/chroma/`.
+4. **Query your notes** by subject; RAG uses the per-user ChromaDB collection for that account.
 
 ## Troubleshooting
 
@@ -93,7 +90,7 @@ If the backend runs on another host or port, set `VITE_API_URL` in `frontend/my-
 
 ### "Registration failed" or "Database unavailable"
 
-- All data is stored in ChromaDB under `user_notes/`. Ensure the backend can create and write to `user_notes/_chroma` and `user_notes/<user_id>/chroma`.
+- ChromaDB must be reachable (`CHROMA_HOST`/`CHROMA_PORT`). Uploads go to `user_notes/`; ensure the backend can create and write that directory.
 - If you see **"Registration failed"** with no other message: check the terminal where `uvicorn` is running for the real error.
 
 ## Useful Commands
@@ -120,16 +117,15 @@ The frontend can be deployed to **https://&lt;username&gt;.github.io/NoteScanner
    - The **Deploy to GitHub Pages** workflow will build the frontend and deploy it.
    - After it finishes, the site will be live at `https://<username>.github.io/NoteScanner/`.
 
-3. **Backend for the deployed site:**
-   - GitHub Pages only serves the static frontend. For explorer, uploads, and AI query to work, the backend must be running and reachable.
-   - Either run the backend locally and use the same machine to open the GitHub Pages URL, or deploy the backend (e.g. Railway, Render) and set `VITE_API_URL` in the workflow to your backend URL before building (e.g. add an env var in the “Install and build” step).
+3. **Backend (not hosted here):**
+   - Only the frontend is deployed to GitHub.io. For explorer, uploads, and AI query to work, run the backend yourself (e.g. locally with `uvicorn backend.api:app --host 0.0.0.0 --port 8000`).
+   - Set the `VITE_API_URL` repo secret to your backend URL (e.g. `http://localhost:8000`) so the built frontend knows where to send API requests.
 
 ## File Structure
-- `backend/` - FastAPI endpoints, extraction, ingestion, query logic
-- `frontend/my-app/` - React/Vite frontend
-- `user_notes/` - Uploaded notes and extracted text (ignored in git)
-- `chroma_storage/` - ChromaDB vector database (ignored in git)
-- `.env` - Secrets and API keys (ignored in git)
+- `backend/` – FastAPI endpoints, extraction, ingestion, query logic
+- `frontend/my-app/` – React/Vite frontend
+- `user_notes/` – Runtime upload directory (created automatically; in `.gitignore`)
+- `.env` – Secrets and API keys (ignored in git)
 
 ## Future Steps
 - Adding a functionality to perform OCR on handwritten PDF documents. 

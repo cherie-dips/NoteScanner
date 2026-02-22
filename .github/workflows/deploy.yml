@@ -3,7 +3,6 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,8 +14,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    environment: github-pages
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,8 +27,10 @@ jobs:
           node-version: "20"
 
       - name: Install and build
+        working-directory: frontend/my-app
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: |
-          cd frontend/my-app
           npm install
           npm run build
 
@@ -38,12 +40,9 @@ jobs:
           path: frontend/my-app/dist
 
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
-    needs: build
+    needs: build-and-deploy
+    environment: github-pages
     steps:
       - name: Deploy to GitHub Pages
-        id: deployment
         uses: actions/deploy-pages@v4
