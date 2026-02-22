@@ -1,45 +1,57 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { LuSendHorizontal } from "react-icons/lu";
 import { API_BASE } from "../config";
+import { authFetch } from "../auth";
 
 export default function QueryInterface() {
   const [query, setQuery] = useState("");
-  const [subject, setSubject] = useState("");
-  const [result, setResult] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!query.trim() || !subject.trim()) return;
+    const text = query.trim();
+    if (!text) return;
 
+    setQuery("");
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
     setLoading(true);
+
     try {
       const formData = new FormData();
-      formData.append("query", query);
-      formData.append("subject", subject);
+      formData.append("query", text);
+      formData.append("subject", "notes");
 
-      const res = await fetch(`${API_BASE}/query_folder`, {
+      const res = await authFetch(`${API_BASE}/query_folder`, {
         method: "POST",
         body: formData,
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        setResult(data);
-      } else {
-        const error = await res.json();
-        setResult({
-          query: query,
-          answer: `Error: ${error.detail || 'Query failed'}`,
-          source_documents: []
-        });
-      }
-    } catch (error) {
-      console.error("Query error:", error);
-      setResult({
-        query: query,
-        answer: "Query failed. Please try again.",
-        source_documents: []
-      });
+      const data = await res.json().catch(() => ({}));
+      const errMsg = data.detail || data.error;
+      const answer = res.ok && !errMsg
+        ? data.answer
+        : (errMsg ? `Error: ${errMsg}` : "Query failed. Please try again.");
+      const source_documents = data.source_documents || [];
+
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: answer, source_documents },
+      ]);
+    } catch (err) {
+      console.error("Query error:", err);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Query failed. Please try again.", source_documents: [] },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -47,65 +59,66 @@ export default function QueryInterface() {
 
   return (
     <div className="query-interface">
-      <h3>Query Your Notes</h3>
-      
-      <form onSubmit={handleSubmit} className="query-form">
-        <div className="query-form-group">
-          <label className="query-form-label">
-            Subject Folder:
-          </label>
-          <input
-            type="text"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            placeholder="e.g., Science, Maths, SST"
-            className="query-form-input"
-          />
-        </div>
-        
-        <div className="query-form-group">
-          <label className="query-form-label">
-            Your Question:
-          </label>
+      <div className="query-messages">
+        {messages.length === 0 && (
+          <div className="query-messages-empty">Ask a question about your notes.</div>
+        )}
+        {messages.map((msg, index) => (
+          <div key={index} className={`query-message query-message--${msg.role}`}>
+            <div className="query-message-bubble">
+              <div className="query-message-content">{msg.content}</div>
+              {msg.role === "assistant" && msg.source_documents?.length > 0 && (
+                <div className="query-sources">
+                  <div className="query-sources-title">Sources</div>
+                  {msg.source_documents.map((doc, i) => (
+                    <div key={i} className="query-source-item">
+                      {doc.content?.substring(0, 200)}...
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="query-message query-message--assistant">
+            <div className="query-message-bubble query-message-loading">
+              <div className="query-message-content">Thinking...</div>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      <form onSubmit={handleSubmit} className="query-form query-form-bottom">
+        <label className="query-form-label-sr">Query your notes</label>
+        <div className="query-input-wrap">
           <textarea
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Ask a question about your notes..."
-            rows={3}
-            className="query-form-textarea"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (query.trim()) handleSubmit(e);
+              }
+            }}
+            placeholder="Query your notes"
+            rows={1}
+            className="query-form-textarea query-form-textarea-inline"
+            disabled={loading}
+            aria-label="Query your notes"
           />
+          <button
+            type="submit"
+            disabled={loading || !query.trim()}
+            className="query-submit-icon"
+            title="Send"
+            aria-label="Send query"
+          >
+            <LuSendHorizontal size={20} />
+          </button>
         </div>
-        
-        <button
-          type="submit"
-          disabled={loading || !query.trim() || !subject.trim()}
-          className="query-submit-btn"
-        >
-          {loading ? "🔄 Processing..." : "Ask Question"}
-        </button>
       </form>
-
-      {result && (
-        <div className="query-result">
-          <h4>Answer:</h4>
-          <div className="query-answer">
-            {result.answer}
-          </div>
-          
-          {result.source_documents && result.source_documents.length > 0 && (
-            <div className="query-sources">
-              <h5>Sources:</h5>
-              <div>
-                {result.source_documents.map((doc, index) => (
-                  <div key={index} className="query-source-item">
-                    {doc.content.substring(0, 200)}...
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

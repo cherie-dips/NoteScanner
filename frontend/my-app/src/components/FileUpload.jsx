@@ -1,5 +1,6 @@
 import { useState, forwardRef } from "react";
 import { API_BASE } from "../config";
+import { authFetch } from "../auth";
 
 const FileUpload = forwardRef(function FileUpload(
   { path, onFileUploaded, hidden = false },
@@ -17,7 +18,7 @@ const FileUpload = forwardRef(function FileUpload(
 
     try {
       setUploading(true);
-      const res = await fetch(`${API_BASE}/upload_note`, {
+      const res = await authFetch(`${API_BASE}/upload_note`, {
         method: "POST",
         body: formData,
       });
@@ -25,11 +26,9 @@ const FileUpload = forwardRef(function FileUpload(
       if (res.ok) {
         const result = await res.json();
         onFileUploaded?.();
-        const chunks = result.ingestion?.chunks_created ?? result.chunks_created ?? 0;
-        alert(`File uploaded and processed!${chunks ? ` Created ${chunks} chunks.` : ""}`);
       } else {
-        const error = await res.json();
-        alert(`Error: ${error.detail || "Upload failed"}`);
+        const error = await res.json().catch(() => ({}));
+        alert(`Error: ${error.detail || error.error || "Upload failed"}`);
       }
     } catch (error) {
       console.error("Upload error:", error);

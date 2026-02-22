@@ -8,9 +8,8 @@ __pycache__/
 venv/
 .venv/
 
-# ChromaDB
+# ChromaDB (legacy local storage; app uses Docker Chroma server)
 chroma_storage/
-backend/chroma_storage/
 
 # User data
 user_notes/

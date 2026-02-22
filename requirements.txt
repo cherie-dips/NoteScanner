@@ -3,6 +3,7 @@ uvicorn
 langchain
 langchain-community
 langchain-chroma
+langchain-text-splitters
 langchain_groq
 pytesseract
 pillow
@@ -13,3 +14,5 @@ sentence-transformers
 chromadb
 pymupdf
 python-multipart
+passlib[bcrypt]
+bcrypt>=4.0,<4.1

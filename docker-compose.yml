@@ -1,15 +1,27 @@
 version: "3.9"
 services:
+  chromadb:
+    image: chromadb/chroma
+    container_name: notescanner-chromadb
+    ports:
+      - "8100:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+
   backend:
     build: .
     container_name: notescanner-backend
+    depends_on:
+      - chromadb
     env_file:
       - .env
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
     ports:
       - "8000:8000"
     volumes:
       - ./user_notes:/app/user_notes
-      - ./backend/chroma_storage:/app/backend/chroma_storage
     command: ["uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000"]
 
   frontend:
@@ -27,3 +39,6 @@ services:
       - ./frontend/my-app/index.html:/app/index.html
       - ./frontend/my-app/vite.config.js:/app/vite.config.js
     command: ["npm", "run", "dev", "--", "--host"]
+
+volumes:
+  chroma_data:
