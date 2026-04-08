@@ -4,14 +4,15 @@ langchain
 langchain-community
 langchain-chroma
 langchain-text-splitters
-langchain_groq
+httpx>=0.27.0
+sarvamai>=0.1.27
 pytesseract
 pillow
 python-dotenv
 transformers
 torch
 sentence-transformers
-chromadb
+chromadb>=1.0.0
 pymupdf
 python-multipart
 passlib[bcrypt]

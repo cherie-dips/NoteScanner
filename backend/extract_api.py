@@ -1,4 +1,4 @@
-"""Extract text from PDFs and images. Uses notes_root as the user's folder (e.g. user_notes/<user_id>)."""
+"""Extract text from PDFs and images (bytes or legacy folder paths)."""
 import os
 from PIL import Image
 import pytesseract
@@ -71,3 +71,10 @@ def extract_text(notes_root: str, subject: str):
         "processed_files": processed_files,
         "extracted_texts": extracted,
     }
+
+
+def extract_text_from_image_bytes(data: bytes) -> str:
+    import io
+    img = Image.open(io.BytesIO(data))
+    return pytesseract.image_to_string(img)
+

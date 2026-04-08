@@ -1,131 +1,259 @@
 # NoteScanner
 
-## Overview
-NoteScanner is an end-to-end pipeline for uploading, extracting, embedding, and querying notes using OCR, ChromaDB, and Groq LLM. It features a FastAPI backend and a React/Vite frontend, orchestrated with Docker Compose.
+NoteScanner is a FastAPI + React platform for uploading notes, extracting text, indexing with embeddings, and generating grounded learning outputs.
+
+Core capabilities:
+
+- Upload PDFs/images/text and extract text with Vision OCR.
+- Store persistent note chunks + embeddings in ChromaDB for retrieval.
+- Support temporary chat-only uploads from the chatbot `+` button (ephemeral cache, no DB persistence).
+- Answer questions and generate flashcards/MCQs/mind maps from retrieved context.
+
+NoteScanner uploads course materials, indexes them in ChromaDB, and uses **Sarvam AI**: **Document Intelligence (Sarvam Vision)** for PDF/image OCR and **Chat Completions** (`sarvam-30b` / `sarvam-105b`) for note-grounded Q&A, flashcards, MCQs, and mind maps. Tesseract remains a fallback extractor. It features a FastAPI backend and a React/Vite frontend, orchestrated with Docker Compose.
 
 You upload your handwritten notes → the system scans, organizes, and lets you chat with your notes using Retrieval-Augmented Generation (RAG).
 
-![NoteScanner Demo](frontend/my-app/public/app-page.png)
+NoteScanner Demo
 
 ## Prerequisites
+
 - Docker & Docker Compose
 - Python 3.10+
 - Node.js 20+
-## Quick Start (Recommended: Docker Compose)
 
-1. **Clone the repository:**
-	```sh
-	git clone https://github.com/cherie-dips/NoteScanner
-	cd NoteScanner
-	```
+## System Architecture
 
-2. **Set up environment variables** (in `.env` at repo root):
-	- `GROQ_API_KEY` – for AI query (required for RAG).
-	- ChromaDB runs as a Docker service; user accounts, sessions, and RAG embeddings live there. Uploaded files are stored under `user_notes/` (created at runtime, gitignored).
+- `frontend/my-app`: React + Vite UI
+- `backend/api.py`: FastAPI API layer
+- `backend/chroma_store.py`: Chroma client + collection accessors
+- `backend/ingest_api.py`: chunking + embedding ingestion
+- `backend/llm_pipeline.py`: OCR + LLM calls
+- `backend/vfs_tree.py`: virtual folder tree helpers
+- `backend/file_meta.py`: file metadata policy layer
 
-3. **Build and run all services:**
-	```sh
-	docker-compose up --build
-	```
-	- Backend: http://localhost:8000
-	- Frontend: http://localhost:5173
+## End-to-End Pipeline
 
-## Manual Setup (Dev Mode)
+### 1) Persistent note upload pipeline (Explorer)
 
-### Backend
-1. Create and activate a Python virtual environment:
-	```sh
-	python3 -m venv venv
-	source venv/bin/activate
-	pip install -r requirements.txt
-	```
-2. Set up `.env` with your API keys (e.g. `GROQ_API_KEY`).
-3. Start the backend (with ChromaDB running via Docker, or set `CHROMA_HOST`/`CHROMA_PORT` if Chroma runs elsewhere):
-	```sh
-	uvicorn backend.api:app --host 0.0.0.0 --port 8000
-	```
+Endpoint: `POST /upload_note`
 
-### Frontend
-1. Install dependencies:
-	```sh
-	cd frontend/my-app
-	npm install
-	```
-2. Start the frontend:
-	```sh
-	npm run dev -- --host
-	```
-3. Access at http://localhost:5173
+Flow:
 
-## Authentication and data
-- **ChromaDB:** User accounts, sessions, and RAG embeddings are stored in a central ChromaDB (Docker service). Per-user collections are named `user_<user_id>_notes`.
-- **Upload storage:** The `user_notes/` directory is created at runtime and holds only uploaded files and extracted `.txt` files under `user_notes/<user_id>/`. It is in `.gitignore` and is not committed. You can delete it locally to free space; the app will recreate it when needed.
-- **Sign up / Sign in:** Email and hashed password are stored in ChromaDB; session IDs are used for auth.
+1. Client uploads file to backend.
+2. Backend reads file bytes in memory.
+3. Text extraction:
+  - PDF: Sarvam Document Intelligence first, parser fallback.
+  - Image: Sarvam Vision OCR first, Tesseract fallback.
+  - Plain text formats: UTF-8 decode.
+4. Backend persists:
+  - full extracted text in `user_documents`,
+  - chunked text + embeddings in `user_{user_id}_notes`.
+5. VFS is updated for explorer visibility.
 
-## Workflow
-1. **Sign up or sign in** on the frontend.
-2. **Create folders and upload notes (PDFs/images).** Files are saved under `user_notes/<user_id>/`; extracted text is stored in ChromaDB and as `.txt` next to the originals.
-3. **Backend extracts text** (OCR for images, PyMuPDF for PDFs), saves `.txt` locally and the full text in ChromaDB.
-4. **Query your notes** by subject; RAG uses the per-user ChromaDB collection for that account.
+### 2) Ephemeral chatbot `+` upload pipeline
 
-## Troubleshooting
+Endpoint: `POST /chat/upload_ephemeral`
 
-### "Could not connect to server. Is the backend running?"
+Flow:
 
-The frontend talks to the backend at `http://localhost:8000` in dev. Fix it by:
+1. Frontend sends file with `chat_session_id`.
+2. Backend extracts text in memory.
+3. Backend stores extracted text in process memory cache keyed by `(user_id, chat_session_id)`.
 
-1. **Start the backend first** (from the repo root):
-   ```sh
-   source venv/bin/activate   # or create one: python3 -m venv venv && source venv/bin/activate
-   pip install -r requirements.txt
-   uvicorn backend.api:app --host 0.0.0.0 --port 8000
-   ```
-2. **Then start the frontend** (in another terminal):
-   ```sh
-   cd frontend/my-app && npm install && npm run dev -- --host
-   ```
-3. Open **http://localhost:5173**. The frontend will call `http://localhost:8000` for `/guest_id`, `/upload_note`, `/register`, etc.
+Important:
 
-If the backend runs on another host or port, set `VITE_API_URL` in `frontend/my-app/.env` (e.g. `VITE_API_URL=http://192.168.1.5:8000`) and restart the dev server.
+- No `user_documents` write.
+- No `user_{user_id}_notes` write.
+- No Chroma persistence for this path.
 
-### "Registration failed" or "Database unavailable"
+Cache clear:
 
-- ChromaDB must be reachable (`CHROMA_HOST`/`CHROMA_PORT`). Uploads go to `user_notes/`; ensure the backend can create and write that directory.
-- If you see **"Registration failed"** with no other message: check the terminal where `uvicorn` is running for the real error.
+- `POST /chat/session/clear`
+- Triggered by chat refresh/new chat/unmount.
 
-## Useful Commands
-- **Rebuild containers** (required after backend code changes, e.g. new routes like delete):
-  ```sh
-  docker-compose build backend && docker-compose up -d
-  # or: docker-compose up --build
-  ```
-- **Stop containers:**
-  ```sh
-  docker-compose down
-  ```
+### 3) Query retrieval sequence (implemented priority)
 
-## Deploy to GitHub Pages
+Endpoint: `POST /query_folder`
 
-The frontend can be deployed to **https://&lt;username&gt;.github.io/NoteScanner/**.
+Retrieval order:
 
-1. **Enable GitHub Pages (one-time):**
-   - In your repo: **Settings → Pages**
-   - Under **Build and deployment**, set **Source** to **GitHub Actions**.
+1. Ephemeral chat uploads (`+` cache)
+2. Opened file in viewer
+3. Other files in same course folder
 
-2. **Deploy:**
-   - Push to the `main` branch (or run the workflow from the **Actions** tab).
-   - The **Deploy to GitHub Pages** workflow will build the frontend and deploy it.
-   - After it finishes, the site will be live at `https://<username>.github.io/NoteScanner/`.
+Selection logic:
 
-3. **Backend (not hosted here):**
-   - Only the frontend is deployed to GitHub.io. For explorer, uploads, and AI query to work, run the backend yourself (e.g. locally with `uvicorn backend.api:app --host 0.0.0.0 --port 8000`).
-   - Set the `VITE_API_URL` repo secret to your backend URL (e.g. `http://localhost:8000`) so the built frontend knows where to send API requests.
+- Embedding-based relevance scoring is computed per stage.
+- The highest-priority relevant stage is selected.
+- If relevance is weak at a higher stage, system falls to next stage.
+- This reduces unrelated-domain leakage (for example RL queries answered from generic ML notes).
 
-## File Structure
-- `backend/` – FastAPI endpoints, extraction, ingestion, query logic
-- `frontend/my-app/` – React/Vite frontend
-- `user_notes/` – Runtime upload directory (created automatically; in `.gitignore`)
-- `.env` – Secrets and API keys (ignored in git)
+### 4) Study generation pipeline
 
-## Future Steps
-- Adding a functionality to perform OCR on handwritten PDF documents. 
+Endpoints:
+
+- `POST /study/generate` (task: `flashcards` or `mcq`)
+- `POST /study/mindmap`
+
+Context policy:
+
+- Opened file is primary context.
+- Same-course files can be included as supporting context.
+
+## API Reference (Main Endpoints)
+
+### Authentication
+
+- `POST /register`
+- `POST /login`
+- `GET /me`
+- `GET /guest_id`
+
+### Notes and VFS
+
+- `GET /list_tree`
+- `POST /create_folder`
+- `POST /create_file`
+- `POST /upload_note`
+- `POST /move_path`
+- `POST /delete_path`
+- `DELETE /notes`
+- `GET /file_meta`
+- `POST /file_meta`
+
+### Query and chat uploads
+
+- `POST /query_folder`
+- `POST /chat/upload_ephemeral`
+- `POST /chat/session/clear`
+
+### Study tools
+
+- `POST /study/generate`
+- `POST /study/mindmap`
+
+### OneNote integration
+
+- `GET /integrations/onenote/status`
+- `GET /integrations/onenote/auth_url`
+- `GET /integrations/onenote/callback`
+- `POST /integrations/onenote/sync`
+
+## Database and Collection Design
+
+Chroma is used as central storage for both metadata and vector retrieval.
+
+Collections:
+
+- `users`: email, hashed password, name
+- `sessions`: session_id -> user_id
+- `user_documents`: full extracted text per logical path
+- `user_{user_id}_notes`: chunk docs + embeddings + chunk metadata
+- `user_{user_id}_vfs`: virtual tree + file meta JSON
+- `onenote_tokens`: OAuth tokens
+- `onenote_oauth_states`: OAuth state for callback
+
+Notes:
+
+- Guest mode uses effective IDs like `guest_<uuid>`.
+- Persistent note uploads are stored/indexed.
+- Chatbot `+` uploads are intentionally ephemeral.
+
+## LLM and OCR Implementation
+
+From `backend/llm_pipeline.py`:
+
+- OCR:
+  - Sarvam Document Intelligence / Vision for PDF-image text extraction.
+  - Local fallback extractors where needed.
+- Q&A:
+  - `sarvam_rag_answer(question, context)`
+- Study generation:
+  - `cheap_study_json(context, task, n)` for flashcards/MCQ
+  - `mind_map_json(context)` for mind maps
+
+Model env controls:
+
+- `SARVAM_MODEL_RAG` (default: `sarvam-105b`)
+- `SARVAM_MODEL_STUDY` (default: `sarvam-30b`)
+
+## Configuration
+
+Required:
+
+- `SARVAM_API_KEY`
+
+Optional Sarvam:
+
+- `SARVAM_API_BASE` (default `https://api.sarvam.ai`)
+- `SARVAM_MODEL_RAG`
+- `SARVAM_MODEL_STUDY`
+- `SARVAM_DOC_INTEL_LANGUAGE` (default `en-IN`)
+- `SARVAM_DOC_INTEL_TIMEOUT` (default `180`)
+
+Chroma options:
+
+- Cloud:
+  - `CHROMA_API_KEY`
+  - `CHROMA_TENANT`
+  - `CHROMA_DATABASE`
+- Self-hosted:
+  - `CHROMA_HOST`
+  - `CHROMA_PORT`
+  - `CHROMA_SSL` (optional)
+
+Other:
+
+- `USER_DOCUMENT_MAX_BYTES`
+- `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` (OneNote)
+
+## Run with Docker Compose
+
+```bash
+docker compose up --build
+```
+
+Services:
+
+- Backend: `http://localhost:8000`
+- Frontend: `http://localhost:5173`
+
+Rebuild backend after backend changes:
+
+```bash
+docker compose build backend && docker compose up -d backend
+```
+
+## Local Development (No Compose)
+
+Backend:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn backend.api:app --host 0.0.0.0 --port 8000
+```
+
+Frontend:
+
+```bash
+cd frontend/my-app
+npm install
+npm run dev -- --host
+```
+
+## Current Product Rules
+
+- Chatbot `+` uploads are temporary per chat session.
+- Temporary uploads are not persisted in Chroma collections.
+- Query routing order is: chat cache -> open file -> same-course files.
+- Chat refresh/new chat clears temporary cache.
+
+## Repository Layout
+
+- `backend/` API, ingestion, retrieval, auth, VFS, LLM integration
+- `frontend/my-app/` UI and interaction layer
+- `docker-compose.yml` local orchestration
+- `requirements.txt` backend dependencies
+

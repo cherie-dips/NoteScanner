@@ -1,5 +1,6 @@
 version: "3.9"
 services:
+  # Omit or stop this service if you use Chroma Cloud (CHROMA_API_KEY in .env).
   chromadb:
     image: chromadb/chroma
     container_name: notescanner-chromadb
@@ -20,8 +21,6 @@ services:
       - CHROMA_PORT=8000
     ports:
       - "8000:8000"
-    volumes:
-      - ./user_notes:/app/user_notes
     command: ["uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000"]
 
   frontend:

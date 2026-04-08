@@ -1,4 +1,5 @@
 import { API_BASE } from "./config";
+import { getBlobUrlForPath } from "./localFileStore";
 
 const SESSION_KEY = "notescanner_session_id";
 const GUEST_KEY = "notescanner_guest_id";
@@ -65,20 +66,33 @@ export function getAuthHeadersForFetch() {
   return {};
 }
 
-/** Build URL for file preview; append session_id or guest_id so backend can authorize. */
+/** Blob URL for a path if this device has a local copy (e.g. after upload). Server does not store binaries. */
 export function getFileUrl(path) {
-  const safePath = path.split("/").map(encodeURIComponent).join("/");
-  const base = `${_apiBase()}/user_notes/${safePath}`;
-  const sessionId = getSessionId();
-  if (sessionId) return `${base}?session_id=${encodeURIComponent(sessionId)}`;
-  const guestId = getGuestId();
-  if (guestId) return `${base}?guest_id=${encodeURIComponent(guestId)}`;
-  return base;
+  return getBlobUrlForPath(path) || "";
 }
 
 export function authFetch(url, options = {}) {
   const headers = { ...getAuthHeadersForFetch(), ...options.headers };
   return fetch(url, { ...options, headers });
+}
+
+/** Readable string from FastAPI/JSON error bodies (detail, error, message). */
+export function apiErrorMessage(data, res) {
+  const status = res?.status;
+  if (!data || typeof data !== "object") {
+    return status ? `Request failed (HTTP ${status})` : "Request failed";
+  }
+  if (typeof data.detail === "string" && data.detail) return data.detail;
+  if (Array.isArray(data.detail) && data.detail.length) {
+    const parts = data.detail.map((x) =>
+      x && typeof x === "object" && x.msg != null ? String(x.msg) : String(x),
+    );
+    const joined = parts.join("; ").trim();
+    if (joined) return joined;
+  }
+  if (data.error) return String(data.error);
+  if (data.message) return String(data.message);
+  return status ? `Request failed (HTTP ${status})` : "Request failed";
 }
 
 export function isSignedIn() {

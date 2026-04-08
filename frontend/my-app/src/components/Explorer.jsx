@@ -1,10 +1,34 @@
 import { useEffect, useState, useRef } from "react";
-import { HiOutlineDocumentPlus, HiOutlineFolderPlus } from "react-icons/hi2";
+import {
+  VscNewFile,
+  VscNewFolder,
+  VscRefresh,
+  VscCollapseAll,
+} from "react-icons/vsc";
 import { BsFileEarmarkPdf } from "react-icons/bs";
-import { AiOutlineDelete } from "react-icons/ai";
 import FileUpload from "./FileUpload";
 import { API_BASE } from "../config";
 import { authFetch, getFileUrl, ensureGuestId } from "../auth";
+import {
+  forgetPath,
+  forgetPathPrefix,
+  relocateLocalEntry,
+} from "../localFileStore";
+import {
+  isOpfsMirrorSupported,
+  isUserFolderPickerSupported,
+  hasUserDiskRootLinkedSync,
+  loadStoredRootHandle,
+  linkNoteScannerFolder,
+  ensurePersistentStoragePermission,
+  withNotesRoot,
+  mirrorEnsureDir,
+  mirrorWriteFile,
+  mirrorRemove,
+  mirrorMoveFile,
+  mirrorMoveFolder,
+} from "../localDiskFolder";
+import { sanitizeVirtualPath } from "../virtualPath";
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -42,23 +66,44 @@ function FileTypeIcon({ name, size = 16 }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function Explorer({ onFileSelect, onDeletePath }) {
+export default function Explorer({
+  onFileSelect,
+  onDeletePath,
+  onMovePath,
+  onTreeChange,
+}) {
   const [tree, setTree] = useState([]);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedIsFolder, setSelectedIsFolder] = useState(false);
-  const [showCreateInput, setShowCreateInput] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
+  /** 'folder' | 'file' | null */
+  const [createInputMode, setCreateInputMode] = useState(null);
+  const [createInputValue, setCreateInputValue] = useState("");
   const [dragSource, setDragSource] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
+  const [newFileMenuOpen, setNewFileMenuOpen] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState(null);
   const fileInputRef = useRef(null);
   const createInputRef = useRef(null);
   const createRowRef = useRef(null);
+  const newFileMenuWrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!isUserFolderPickerSupported() && isOpfsMirrorSupported()) {
+      void ensurePersistentStoragePermission();
+    }
+  }, []);
+
+  /** Restore localStorage linked-flag from IndexedDB (e.g. after deploy) so we don’t show the picker again. */
+  useEffect(() => {
+    void loadStoredRootHandle();
+  }, []);
 
   const fetchTree = async () => {
     const res = await authFetch(`${API_BASE}/list_tree`);
     const data = await res.json();
     setTree(data.tree || []);
+    onTreeChange?.();
   };
 
   useEffect(() => {
@@ -66,16 +111,81 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
   }, []);
 
   useEffect(() => {
-    if (!showCreateInput) return;
+    if (!createInputMode) return;
     const handleClickOutside = (e) => {
       if (createRowRef.current && !createRowRef.current.contains(e.target)) {
-        setShowCreateInput(false);
-        setNewFolderName("");
+        setCreateInputMode(null);
+        setCreateInputValue("");
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showCreateInput]);
+  }, [createInputMode]);
+
+  useEffect(() => {
+    if (!newFileMenuOpen) return;
+    const close = (e) => {
+      if (newFileMenuWrapRef.current && !newFileMenuWrapRef.current.contains(e.target)) {
+        setNewFileMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [newFileMenuOpen]);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = (e) => {
+      if (e?.target?.closest?.(".vsc2-context-menu")) return;
+      setCtxMenu(null);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") setCtxMenu(null);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [ctxMenu]);
+
+  const openContextMenu = (e, node) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY, node });
+  };
+
+  const copyNodePath = async (node) => {
+    const p = node.path.replace(/\\/g, "/");
+    try {
+      await navigator.clipboard.writeText(p);
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = p;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch {
+        alert("Could not copy path.");
+      }
+    }
+    setCtxMenu(null);
+  };
+
+  const clearTreeSelection = () => {
+    setSelectedItem(null);
+    setSelectedIsFolder(false);
+  };
+
+  const handleTreeMouseDown = (e) => {
+    if (e.target.closest(".vsc2-row")) return;
+    clearTreeSelection();
+  };
 
   const toggleFolder = (folderPath) => {
     setExpandedFolders((prev) => {
@@ -91,31 +201,80 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
       ? selectedItem.replace(/\/[^/]+$/, "")
       : "";
 
-  const openCreateInput = () => {
-    setNewFolderName("");
-    setShowCreateInput(true);
+  const openCreateFolderInput = () => {
+    setCreateInputValue("");
+    setCreateInputMode("folder");
     setTimeout(() => createInputRef.current?.focus(), 0);
   };
 
-  const submitCreateFolder = async () => {
-    const name = newFolderName.trim();
+  const openCreateFileInput = () => {
+    setCreateInputValue("");
+    setCreateInputMode("file");
+    setTimeout(() => createInputRef.current?.focus(), 0);
+  };
+
+  const collapseAllFolders = () => {
+    setExpandedFolders(new Set());
+  };
+
+  const submitCreateInput = async () => {
+    const name = createInputValue.trim();
     if (!name) return;
-    setShowCreateInput(false);
-    setNewFolderName("");
+    const mode = createInputMode;
+    const parentForCreate = parentPathForCreate;
+
+    // Must not await IndexedDB before showDirectoryPicker — that drops user activation and the picker never opens.
+    if (mode === "folder" && !parentForCreate && isUserFolderPickerSupported() && !hasUserDiskRootLinkedSync()) {
+      try {
+        const linked = await linkNoteScannerFolder();
+        if (linked === null) {
+          /* user cancelled setup or wrong folder name — still create the course folder in the app */
+        }
+      } catch (e) {
+        if (e?.name !== "AbortError") {
+          alert(e?.message || "Could not link your NoteScanner folder.");
+          return;
+        }
+      }
+    }
+
+    setCreateInputMode(null);
+    setCreateInputValue("");
     try {
       const formData = new FormData();
-      formData.append("path", parentPathForCreate);
+      formData.append("path", sanitizeVirtualPath(parentForCreate));
       formData.append("name", name);
-      const res = await authFetch(`${API_BASE}/create_folder`, { method: "POST", body: formData });
+      const url = mode === "folder" ? `${API_BASE}/create_folder` : `${API_BASE}/create_file`;
+      const res = await authFetch(url, { method: "POST", body: formData });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const parent = (parentForCreate || "").replace(/\\/g, "/");
+        void withNotesRoot(async (root) => {
+          if (mode === "folder") {
+            const rel = sanitizeVirtualPath(parent ? `${parent}/${name}` : name);
+            await mirrorEnsureDir(root, rel);
+          } else {
+            const rel = sanitizeVirtualPath(data.path || "");
+            if (rel) await mirrorWriteFile(root, rel, new Blob([]));
+          }
+        });
         fetchTree();
-        if (parentPathForCreate) setExpandedFolders((prev) => new Set(prev).add(parentPathForCreate));
+        setExpandedFolders((prev) => {
+          const n = new Set(prev);
+          const parent = (parentForCreate || "").replace(/\\/g, "/");
+          if (parent) n.add(parent);
+          if (mode === "folder") {
+            const rel = parent ? `${parent}/${name}` : name.replace(/\\/g, "/");
+            n.add(rel);
+          }
+          return n;
+        });
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "Failed to create folder.");
+        alert(data.error || `Failed to create ${mode === "folder" ? "folder" : "file"}.`);
       }
-    } catch (_) {
-      alert("Failed to create folder.");
+    } catch {
+      alert(`Failed to create ${mode === "folder" ? "folder" : "file"}.`);
     }
   };
 
@@ -124,17 +283,28 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
     if (toFolder === fromPath || (fromPath + "/").startsWith(toFolder + "/")) return;
     try {
       const formData = new FormData();
-      formData.append("from_path", fromPath);
-      formData.append("to_folder", toFolder);
+      formData.append("from_path", sanitizeVirtualPath(fromPath));
+      formData.append("to_folder", sanitizeVirtualPath(toFolder));
       const res = await authFetch(`${API_BASE}/move_path`, { method: "POST", body: formData });
       if (res.ok) {
-        onDeletePath?.(fromPath, false);
+        const data = await res.json().catch(() => ({}));
+        const toPath = (data.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+        if (toPath) {
+          relocateLocalEntry(fromPath, toPath, !!dragSource.isFolder);
+          onMovePath?.(fromPath, toPath, !!dragSource.isFolder);
+          const isFolder = !!dragSource.isFolder;
+          void withNotesRoot((root) =>
+            isFolder
+              ? mirrorMoveFolder(root, fromPath, toPath)
+              : mirrorMoveFile(root, fromPath, toPath),
+          );
+        }
         fetchTree();
       } else {
         const data = await res.json().catch(() => ({}));
         alert(data.error || "Move failed.");
       }
-    } catch (_) {
+    } catch {
       alert("Move failed.");
     } finally {
       setDragSource(null);
@@ -142,15 +312,18 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
     }
   };
 
-  const handleDelete = async (e, node) => {
-    e.stopPropagation();
+  const deleteNode = async (node) => {
     const isFolder = node.type === "folder";
     if (!window.confirm(isFolder ? `Delete folder "${node.name}" and all its contents?` : `Delete file "${node.name}"?`)) return;
+    setCtxMenu(null);
     const formData = new FormData();
-    formData.append("path", node.path);
+    formData.append("path", sanitizeVirtualPath(node.path));
     formData.append("kind", isFolder ? "folder" : "file");
     const res = await authFetch(`${API_BASE}/delete_path`, { method: "POST", body: formData });
     if (res.ok) {
+      if (isFolder) forgetPathPrefix(node.path);
+      else forgetPath(node.path);
+      void withNotesRoot((root) => mirrorRemove(root, node.path, isFolder));
       onDeletePath?.(node.path, isFolder);
       fetchTree();
     } else {
@@ -158,7 +331,6 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
       alert(data.error || "Delete failed.");
     }
   };
-
   const canDropOn = (targetFolderPath) => {
     if (!dragSource) return false;
     if (targetFolderPath === dragSource.path) return false;
@@ -168,12 +340,11 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
 
   // ─── Recursive tree renderer ─────────────────────────────────────────────
 
-  const renderNode = (node, depth = 0, isLast = false, parentLines = []) => {
+  const renderNode = (node, depth = 0, parentLines = []) => {
     const INDENT = 8; // px per depth level (matches VS Code's tight spacing)
 
     if (node.type === "folder") {
       const isExpanded = expandedFolders.has(node.path);
-      const hasChildren = node.children?.length > 0;
       const isDropTarget = dropTarget === node.path && canDropOn(node.path);
       const isSelected = selectedItem === node.path;
 
@@ -182,8 +353,7 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
           <div
             className={`vsc2-row${isSelected ? " vsc2-row--selected" : ""}${isDropTarget ? " vsc2-row--drop" : ""}`}
             style={{ paddingLeft: `${depth * INDENT + 4}px` }}
-            onClick={(e) => {
-              if (e.target.closest(".vsc2-delete")) return;
+            onClick={() => {
               setSelectedItem(node.path);
               setSelectedIsFolder(true);
               toggleFolder(node.path);
@@ -216,27 +386,23 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
               />
             ))}
 
-            {/* Chevron */}
-            <span className={`vsc2-chevron${isExpanded ? " vsc2-chevron--open" : ""}`}>
-              {hasChildren ? (
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+            <span
+              className="vsc2-row-name-hit"
+              onContextMenu={(e) => openContextMenu(e, node)}
+            >
+              <span className={`vsc2-chevron${isExpanded ? " vsc2-chevron--open" : ""}`}>
+                <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden>
                   <path d="M6 4l4 4-4 4V4Z" />
                 </svg>
-              ) : null}
+              </span>
+              <span className="vsc2-label">{node.name}</span>
             </span>
-
-            <span className="vsc2-label">{node.name}</span>
-
-            <button type="button" className="vsc2-delete" onClick={(e) => handleDelete(e, node)} title="Delete folder" aria-label="Delete folder">
-              <AiOutlineDelete size={14} />
-            </button>
           </div>
 
-          {/* Children */}
-          {isExpanded && hasChildren && (
+          {isExpanded && (
             <div className="vsc2-children">
-              {node.children.map((child, i) =>
-                renderNode(child, depth + 1, i === node.children.length - 1, [...parentLines])
+              {(node.children || []).map((child) =>
+                renderNode(child, depth + 1, [...parentLines])
               )}
             </div>
           )}
@@ -251,11 +417,10 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
         key={node.path}
         className={`vsc2-row vsc2-row--file${isSelected ? " vsc2-row--selected" : ""}`}
         style={{ paddingLeft: `${depth * INDENT + 4 + 16}px` }}  /* +16 for chevron space */
-        onClick={(e) => {
-          if (e.target.closest(".vsc2-delete")) return;
+        onClick={() => {
           setSelectedItem(node.path);
           setSelectedIsFolder(false);
-          onFileSelect?.(getFileUrl(node.path), node.name);
+          onFileSelect?.(getFileUrl(node.path) || null, node.name, node.path);
         }}
         draggable
         onDragStart={(e) => {
@@ -274,11 +439,10 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
           />
         ))}
 
-        <FileTypeIcon name={node.name} size={15} />
-        <span className="vsc2-label">{node.name}</span>
-        <button type="button" className="vsc2-delete" onClick={(e) => handleDelete(e, node)} title="Delete file" aria-label="Delete file">
-          <AiOutlineDelete size={14} />
-        </button>
+        <span className="vsc2-row-name-hit" onContextMenu={(e) => openContextMenu(e, node)}>
+          <FileTypeIcon name={node.name} size={15} />
+          <span className="vsc2-label">{node.name}</span>
+        </span>
       </div>
     );
   };
@@ -287,60 +451,153 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
 
   return (
     <div className="vsc2-explorer">
-        {/* Header */}
+        {/* Header — VS Code–style title + toolbar */}
         <div className="vsc2-header">
-          <span className="vsc2-header-title">EXPLORER</span>
+          <span
+            className="vsc2-header-title"
+            onClick={clearTreeSelection}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                clearTreeSelection();
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            title="Clear selection — new folder/file goes to workspace root"
+          >
+            NOTESCANNER
+          </span>
           <div className="vsc2-header-actions">
+            <div className="vsc2-header-menu-wrap" ref={newFileMenuWrapRef}>
+              <button
+                type="button"
+                className="vsc2-header-btn"
+                onClick={() => setNewFileMenuOpen((o) => !o)}
+                title="New file or upload"
+                aria-expanded={newFileMenuOpen}
+                aria-haspopup="menu"
+                aria-label="New file or upload"
+              >
+                <VscNewFile size={16} />
+              </button>
+              {newFileMenuOpen && (
+                <div className="vsc2-dropdown" role="menu">
+                  <button
+                    type="button"
+                    className="vsc2-dropdown-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setNewFileMenuOpen(false);
+                      openCreateFileInput();
+                    }}
+                  >
+                    New empty file…
+                  </button>
+                  <button
+                    type="button"
+                    className="vsc2-dropdown-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setNewFileMenuOpen(false);
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    Upload file…
+                  </button>
+                </div>
+              )}
+            </div>
             <button
               type="button"
               className="vsc2-header-btn"
-              onClick={() => fileInputRef.current?.click()}
-              title="Upload File"
-              aria-label="Upload file"
+              onClick={openCreateFolderInput}
+              title="New Folder"
+              aria-label="New Folder"
             >
-              <HiOutlineDocumentPlus size={16} />
+              <VscNewFolder size={16} />
             </button>
             <button
               type="button"
               className="vsc2-header-btn"
-              onClick={openCreateInput}
-              title="New Folder"
-              aria-label="New Folder"
+              onClick={() => fetchTree()}
+              title="Refresh Explorer"
+              aria-label="Refresh Explorer"
             >
-              <HiOutlineFolderPlus size={16} />
+              <VscRefresh size={16} />
+            </button>
+            <button
+              type="button"
+              className="vsc2-header-btn"
+              onClick={collapseAllFolders}
+              title="Collapse Folders in Explorer"
+              aria-label="Collapse Folders in Explorer"
+            >
+              <VscCollapseAll size={16} />
             </button>
           </div>
         </div>
 
-        {/* Create folder input */}
-        {showCreateInput && (
+        {createInputMode && (
           <div className="vsc2-create-row" ref={createRowRef}>
             <input
               ref={createInputRef}
               type="text"
               className="vsc2-create-input"
-              placeholder={parentPathForCreate ? `Folder in ${parentPathForCreate}` : "Folder name…"}
-              value={newFolderName}
-              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder={
+                createInputMode === "folder"
+                  ? (parentPathForCreate ? `New folder in ${parentPathForCreate}` : "New folder name…")
+                  : (parentPathForCreate ? `New file in ${parentPathForCreate} (e.g. notes.txt)` : "New file name (e.g. notes.txt)")
+              }
+              value={createInputValue}
+              onChange={(e) => setCreateInputValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") submitCreateFolder();
-                if (e.key === "Escape") { setShowCreateInput(false); setNewFolderName(""); }
+                if (e.key === "Enter") submitCreateInput();
+                if (e.key === "Escape") {
+                  setCreateInputMode(null);
+                  setCreateInputValue("");
+                }
               }}
             />
             <button
               type="button"
               className="vsc2-create-btn"
-              onClick={submitCreateFolder}
-              disabled={!newFolderName.trim()}
-            >OK</button>
+              onClick={submitCreateInput}
+              disabled={!createInputValue.trim()}
+            >
+              OK
+            </button>
           </div>
         )}
 
         <FileUpload ref={fileInputRef} path={uploadPath} onFileUploaded={fetchTree} hidden />
 
-        {/* Tree */}
-        <div className="vsc2-tree">
-          {/* Root drop zone (visible only while dragging) */}
+        {ctxMenu && (
+          <div
+            className="vsc2-context-menu"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}
+            role="menu"
+          >
+            <button
+              type="button"
+              className="vsc2-context-menu-item"
+              role="menuitem"
+              onClick={() => copyNodePath(ctxMenu.node)}
+            >
+              Copy path
+            </button>
+            <button
+              type="button"
+              className="vsc2-context-menu-item vsc2-context-menu-item--danger"
+              role="menuitem"
+              onClick={() => deleteNode(ctxMenu.node)}
+            >
+              Delete…
+            </button>
+          </div>
+        )}
+
+        <div className="vsc2-tree" onMouseDown={handleTreeMouseDown}>
           {dragSource && (
             <div
               className={`vsc2-root-drop${dropTarget === "" ? " vsc2-row--drop" : ""}`}
@@ -353,9 +610,9 @@ export default function Explorer({ onFileSelect, onDeletePath }) {
           )}
 
           {tree.length === 0 ? (
-            <div className="vsc2-empty">No files yet. Upload a file or create a folder.</div>
+            <div className="vsc2-empty">No files yet. Use New File or New Folder (click the title above to target the root).</div>
           ) : (
-            tree.map((node, i) => renderNode(node, 0, i === tree.length - 1))
+            tree.map((node) => renderNode(node, 0))
           )}
         </div>
       </div>
