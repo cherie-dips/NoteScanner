@@ -1082,7 +1082,7 @@ def study_generate(
 
 
 @app.post("/study/mindmap")
-def study_mindmap(
+def study_summary(
     courses: str = Form(""),
     focus_query: str = Form("main concepts"),
     opened_file_path: str = Form(""),
@@ -1103,12 +1103,12 @@ def study_mindmap(
     )
     if cerr:
         return JSONResponse({"error": cerr, "scope": scope}, status_code=400)
-    data, err = llm_pipeline.mind_map_json(ctx)
+    summary_text, err = llm_pipeline.topic_summary(ctx)
     if err:
         return JSONResponse({"error": err}, status_code=503)
     return JSONResponse(
         {
-            "graph": data,
+            "summary": summary_text,
             "grounded_on_path": _strip_storage_path(opened_file_path or ""),
             "context_chars": len(ctx or ""),
         }

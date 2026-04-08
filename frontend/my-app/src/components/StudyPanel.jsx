@@ -1,31 +1,6 @@
 import { useState, useCallback } from "react";
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  useNodesState,
-  useEdgesState,
-  ReactFlowProvider,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import { API_BASE } from "../config";
 import { authFetch } from "../auth";
-
-function graphToFlow(graph) {
-  const rawNodes = graph?.nodes || [];
-  const nodes = rawNodes.map((n, i) => ({
-    id: String(n.id),
-    position: { x: (i % 6) * 140, y: Math.floor(i / 6) * 100 },
-    data: { label: n.label || n.id },
-  }));
-  const edges = (graph?.edges || []).map((e, i) => ({
-    id: `e${i}`,
-    source: String(e.source),
-    target: String(e.target),
-    label: e.label || "",
-  }));
-  return { initialNodes: nodes, initialEdges: edges };
-}
 
 export default function StudyPanel({
   coursesCsv = "",
@@ -41,8 +16,7 @@ export default function StudyPanel({
   const [mcq, setMcq] = useState([]);
   const [mcqIdx, setMcqIdx] = useState(0);
   const [picked, setPicked] = useState(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [summary, setSummary] = useState("");
   const hasActiveFile = !!(activeFilePath || "").trim();
 
   const runFlashcards = useCallback(async () => {
@@ -117,49 +91,31 @@ export default function StudyPanel({
     }
   }, [coursesCsv, activeFilePath, activeCourseFolder]);
 
-  const runMindmap = useCallback(async () => {
+  const runSummary = useCallback(async () => {
     setLoading(true);
     setError("");
-    setNodes([]);
-    setEdges([]);
+    setSummary("");
     try {
       const fd = new FormData();
       fd.append("courses", coursesCsv);
       fd.append("opened_file_path", activeFilePath || "");
       fd.append("course_path", activeCourseFolder || "");
       fd.append("include_course_context", "true");
-      fd.append("focus_query", "concept relationships");
+      fd.append("focus_query", "comprehensive topic summary");
       const res = await authFetch(`${API_BASE}/study/mindmap`, { method: "POST", body: fd });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || "Failed");
-      const nodesRaw = Array.isArray(data?.graph?.nodes) ? data.graph.nodes : [];
-      if (!nodesRaw.length) throw new Error("No mind map returned for this file.");
-      const graph = {
-        ...data.graph,
-        nodes: nodesRaw.map((n) => {
-          if (!n || typeof n.label !== "string") return n;
-          const sq = typeof n.source_quote === "string" ? n.source_quote.trim() : "";
-          const label = n.label.trim();
-          return {
-            ...n,
-            source_quote: sq.length >= 8 ? sq : label.slice(0, 220),
-          };
-        }),
-      };
-      const { initialNodes, initialEdges } = graphToFlow(graph);
-      setNodes(initialNodes);
-      setEdges(initialEdges);
+      if (!data.summary) throw new Error("No summary returned for this file.");
+      setSummary(data.summary);
     } catch (e) {
       setError(e.message || "Failed");
-      setNodes([]);
-      setEdges([]);
+      setSummary("");
     } finally {
       setLoading(false);
     }
-  }, [coursesCsv, activeFilePath, activeCourseFolder, setNodes, setEdges]);
+  }, [coursesCsv, activeFilePath, activeCourseFolder]);
 
   return (
-    <ReactFlowProvider>
     <div className="study-panel">
       <div className="study-tabs">
         <button type="button" className={tab === "flashcards" ? "active" : ""} onClick={() => setTab("flashcards")}>
@@ -168,11 +124,12 @@ export default function StudyPanel({
         <button type="button" className={tab === "mcq" ? "active" : ""} onClick={() => setTab("mcq")}>
           Mock MCQ
         </button>
-        <button type="button" className={tab === "map" ? "active" : ""} onClick={() => setTab("map")}>
-          Mind map
+        <button type="button" className={tab === "summary" ? "active" : ""} onClick={() => setTab("summary")}>
+          Summary
         </button>
       </div>
       {error && <div className="study-error">{error}</div>}
+
       {tab === "flashcards" && (
         <div className="study-section">
           <button type="button" className="study-action" disabled={loading || !hasActiveFile} onClick={runFlashcards}>
@@ -182,6 +139,9 @@ export default function StudyPanel({
             <div className="flashcard">
               <div className="flashcard-index">
                 {cardIdx + 1} / {cards.length}
+                {cards[cardIdx]?.source === "subject_knowledge" && (
+                  <span className="flashcard-badge">📖 Beyond notes</span>
+                )}
               </div>
               <button type="button" className="flashcard-face" onClick={() => setShowBack((s) => !s)}>
                 {showBack ? cards[cardIdx]?.back : cards[cardIdx]?.front}
@@ -198,6 +158,7 @@ export default function StudyPanel({
           )}
         </div>
       )}
+
       {tab === "mcq" && (
         <div className="study-section">
           <button type="button" className="study-action" disabled={loading || !hasActiveFile} onClick={runMcq}>
@@ -205,7 +166,12 @@ export default function StudyPanel({
           </button>
           {mcq.length > 0 && (
             <div className="mcq-block">
-              <p className="mcq-q">{mcq[mcqIdx]?.question}</p>
+              <p className="mcq-q">
+                {mcq[mcqIdx]?.question}
+                {mcq[mcqIdx]?.source === "subject_knowledge" && (
+                  <span className="mcq-badge">📖 Beyond notes</span>
+                )}
+              </p>
               <ul className="mcq-options">
                 {(mcq[mcqIdx]?.options || []).map((opt, i) => (
                   <li key={i}>
@@ -217,7 +183,7 @@ export default function StudyPanel({
               </ul>
               {picked != null && (
                 <p className="mcq-ans">
-                  {picked === mcq[mcqIdx]?.answer_index ? "Correct." : `Answer: option ${(mcq[mcqIdx]?.answer_index ?? 0) + 1}`}
+                  {picked === mcq[mcqIdx]?.answer_index ? "✓ Correct!" : `✗ Answer: option ${(mcq[mcqIdx]?.answer_index ?? 0) + 1}`}
                 </p>
               )}
               <div className="flashcard-nav">
@@ -232,20 +198,19 @@ export default function StudyPanel({
           )}
         </div>
       )}
-      {tab === "map" && (
-        <div className="study-section study-map-wrap">
-          <button type="button" className="study-action" disabled={loading || !hasActiveFile} onClick={runMindmap}>
-            {loading ? "…" : "Build mind map"}
+
+      {tab === "summary" && (
+        <div className="study-section">
+          <button type="button" className="study-action" disabled={loading || !hasActiveFile} onClick={runSummary}>
+            {loading ? "…" : "Generate summary"}
           </button>
-          <div className="react-flow-wrap">
-            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} fitView>
-              <Background />
-              <Controls />
-            </ReactFlow>
-          </div>
+          {summary && (
+            <div className="study-summary">
+              <p>{summary}</p>
+            </div>
+          )}
         </div>
       )}
     </div>
-    </ReactFlowProvider>
   );
 }

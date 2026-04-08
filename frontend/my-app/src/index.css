@@ -498,11 +498,26 @@ html, body { height: 100%; overflow: hidden; }
 }
 .mcq-options button.picked { border-color: #007acc; }
 .mcq-ans { font-size: 12px; color: #89d185; }
-.react-flow-wrap {
-  height: 320px;
+.study-summary {
+  margin-top: 10px;
+  padding: 14px 16px;
+  background: #2d2d30;
   border: 1px solid #3c3c3c;
-  border-radius: 6px;
-  margin-top: 8px;
+  border-radius: 8px;
+  line-height: 1.6;
+  font-size: 13px;
+  color: #d4d4d4;
+}
+.study-summary p { margin: 0; }
+.flashcard-badge, .mcq-badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #3c3c3c;
+  color: #89d185;
+  vertical-align: middle;
 }
 
 /* ─── Left Sidebar ──────────────────────────────────────────────────────── */

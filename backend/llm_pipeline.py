@@ -3,7 +3,6 @@ import json
 import os
 import re
 import tempfile
-import unicodedata
 import zipfile
 from typing import Any
 
@@ -262,26 +261,30 @@ def sarvam_rag_answer(question: str, context: str) -> tuple[str | None, str | No
         {
             "role": "system",
             "content": (
-                "You are a smart study assistant for course preparation. "
-                "Use the provided notes excerpts as the primary grounding source. "
-                "If the exact concept is missing in notes, DO NOT stop with a refusal. "
-                "Instead, answer using standard, verified subject knowledge that is consistent with the course topic. "
-                "Never drift to unrelated domains. "
-                "When knowledge goes beyond the notes, clearly label that part as 'Concept support'. "
-                "Do not claim inability to access files."
+                "You are a brilliant subject-matter tutor helping a student prepare for exams.\n\n"
+                "GROUNDING RULES:\n"
+                "- The student's notes are your PRIMARY source of truth.\n"
+                "- Identify the subject/topic from the notes (e.g. Machine Learning, Linear Algebra, Operating Systems).\n"
+                "- ALWAYS answer the student's question — never refuse or say 'not in notes'.\n"
+                "- When the notes contain the answer, cite specific details from them.\n"
+                "- When the notes are incomplete, supplement with correct, textbook-level knowledge for THAT subject.\n"
+                "  Mark such additions with '📖 Beyond notes:' so the student knows.\n"
+                "- NEVER drift to unrelated subjects. If asked about something outside the course scope, "
+                "  briefly redirect: 'That's outside [subject]. Here's what your notes cover instead…'\n\n"
+                "TEACHING STYLE:\n"
+                "- Explain like a great tutor: clear, concise, with examples.\n"
+                "- For problem-solving: show step-by-step working.\n"
+                "- For tricky exam practice: generate 5-8 challenging questions with concise answer keys.\n"
+                "- Use bullet points and short paragraphs for readability.\n"
+                "- Do not claim inability to access files or notes."
             ),
         },
         {
             "role": "user",
             "content": (
-                f"Question:\n{q}\n\n"
-                f"Notes excerpts:\n{ctx}\n\n"
-                "Answer policy:\n"
-                "1) Start with the best answer directly.\n"
-                "2) Prefer notes evidence when available.\n"
-                "3) If notes are incomplete, still explain the concept correctly using 'Concept support' (verified subject knowledge).\n"
-                "4) If user asks for tricky exam practice, generate 8-10 challenging questions and concise answer keys.\n"
-                "5) Keep response concise, correct, and study-friendly."
+                f"**Student's question:** {q}\n\n"
+                f"**Notes excerpts:**\n{ctx}\n\n"
+                "Answer the question fully. Use notes evidence first, then subject knowledge if needed."
             ),
         },
     ]
@@ -289,7 +292,7 @@ def sarvam_rag_answer(question: str, context: str) -> tuple[str | None, str | No
         messages,
         model=_model_rag(),
         max_tokens=4096,
-        temperature=0.2,
+        temperature=0.3,
     )
 
 
@@ -328,129 +331,10 @@ def _context_keywords(context: str) -> set[str]:
     return {k for k, _v in ranked[:250]}
 
 
-def _grounded_enough(text: str, keywords: set[str], *, min_hits: int = 2) -> bool:
-    if not keywords:
-        return False
-    hits = len(set(_tokens(text)) & keywords)
-    return hits >= min_hits
-
-
-def _normalize_study_match(s: str) -> str:
-    t = unicodedata.normalize("NFKC", s or "")
-    for u, a in (
-        ("\u2013", "-"),
-        ("\u2014", "-"),
-        ("\u2212", "-"),
-        ("\u00a0", " "),
-        ("\u200b", ""),
-    ):
-        t = t.replace(u, a)
-    return re.sub(r"\s+", " ", t.strip().lower())
-
-
-def _contains_context_quote(context: str, quote: str) -> bool:
-    q = (quote or "").strip()
-    if len(q) < 12:
-        return False
-    ctx_raw = context or ""
-    # Fast path: exact / case-insensitive substring of raw notes (handles OCR spacing).
-    if q in ctx_raw:
-        return True
-    if q.lower() in ctx_raw.lower():
-        return True
-    ctx_n = _normalize_study_match(context)
-    qq = _normalize_study_match(q)
-    if len(qq) < 12:
-        return False
-    if qq in ctx_n:
-        return True
-    # Model may drop punctuation around matrices / LaTeX; alnum fold still ties to notes.
-    def fold(t: str) -> str:
-        return re.sub(r"[^a-z0-9]+", "", t)
-
-    qf, cf = fold(qq), fold(ctx_n)
-    return len(qf) >= 10 and qf in cf
-
-
-def _pick_evidence_span(body: str, text_for_match: str, *, min_len: int = 12, max_len: int = 240) -> str:
-    """Choose a substring of body that best overlaps tokens from text_for_match (server-side evidence)."""
-    b = body or ""
-    if len(b) < min_len:
-        return ""
-    toks = [t for t in _tokens(text_for_match) if len(t) >= 3][:50]
-    win = min(max_len, len(b))
-    win = max(min_len, win)
-    step = max(40, win // 4)
-    best_i, best_score = 0, -1
-    upper = max(1, len(b) - win + 1)
-    for i in range(0, upper, step):
-        chunk = b[i : i + win]
-        cl = chunk.lower()
-        score = sum(1 for t in toks if t in cl) if toks else len(chunk)
-        if score > best_score:
-            best_score = score
-            best_i = i
-    span = b[best_i : best_i + win].strip()
-    if len(span) < min_len:
-        span = b[: min(max_len, len(b))].strip()
-    out = span[:max_len] if span else ""
-    if out and not _contains_context_quote(b, out):
-        out = b[: min(max_len, len(b))].strip()[:max_len]
-    return out
-
-
-def _best_line_snippet(body: str, anchor_text: str, max_len: int = 220) -> str:
-    """Return a note line (or start of body) that best overlaps anchor tokens."""
-    b = body or ""
-    if len(b) < 12:
-        return ""
-    want = set(_tokens(anchor_text))
-    best_s, best_score = "", -1
-    for line in b.splitlines():
-        s = line.strip()
-        if len(s) < 12:
-            continue
-        got = set(_tokens(s))
-        score = len(want & got) if want else len(s)
-        if score > best_score:
-            best_score, best_s = score, s
-    if best_s and _contains_context_quote(b, best_s[:max_len]):
-        return best_s[:max_len].strip()
-    head = b[:max_len].strip()
-    return head if len(head) >= 12 else ""
-
-
-def _token_overlap(a: str, b: str) -> int:
-    return len(set(_tokens(a)) & set(_tokens(b)))
-
-
-def _finalize_evidence(primary_body: str, evidence: str, anchor_text: str, keywords: set[str]) -> str | None:
-    """Return evidence substring of primary_body: model quote, picked span, best line, or note head."""
-    body = (primary_body or "").strip()
-    if len(body) < 12:
-        return None
-    ev = (evidence or "").strip()
-    if ev and _contains_context_quote(body, ev):
-        return ev[:500]
-    picked = _pick_evidence_span(body, anchor_text)
-    if picked and _contains_context_quote(body, picked):
-        return picked[:500]
-    line_snip = _best_line_snippet(body, anchor_text)
-    if line_snip and _contains_context_quote(body, line_snip):
-        return line_snip[:500]
-    if _grounded_enough(anchor_text, keywords, min_hits=1):
-        head = body[: min(220, len(body))].strip()
-        if len(head) >= 12 and _contains_context_quote(body, head):
-            return head
-    return None
-
-
-def _validate_flashcards(
-    items: Any, n: int, keywords: set[str], ctx: str, primary_body: str
-) -> list[dict[str, str]] | None:
+def _validate_flashcards_smart(items: Any, n: int) -> list[dict[str, str]] | None:
+    """Accept flashcards with valid front/back; no verbatim evidence requirement."""
     if not isinstance(items, list):
         return None
-    body = (primary_body or _primary_body_from_study_ctx(ctx) or ctx).strip()
     cleaned: list[dict[str, str]] = []
     for it in items:
         if len(cleaned) >= n:
@@ -459,20 +343,17 @@ def _validate_flashcards(
             continue
         front = str(it.get("front") or "").strip()
         back = str(it.get("back") or "").strip()
-        if not front or not back:
+        if len(front) < 5 or len(back) < 5:
             continue
-        ev_raw = str(it.get("evidence") or "").strip()
-        evidence = _finalize_evidence(body, ev_raw, front + " " + back, keywords)
-        if not evidence:
-            continue
-        cleaned.append({"front": front, "back": back, "evidence": evidence})
+        source = str(it.get("source") or "notes").strip()
+        cleaned.append({"front": front, "back": back, "source": source})
     return cleaned if len(cleaned) >= 1 else None
 
 
-def _validate_mcq(items: Any, n: int, keywords: set[str], ctx: str, primary_body: str) -> list[dict[str, Any]] | None:
+def _validate_mcq_smart(items: Any, n: int) -> list[dict[str, Any]] | None:
+    """Accept MCQs with valid structure; no verbatim evidence requirement."""
     if not isinstance(items, list):
         return None
-    body = (primary_body or _primary_body_from_study_ctx(ctx) or ctx).strip()
     cleaned: list[dict[str, Any]] = []
     for it in items:
         if len(cleaned) >= n:
@@ -493,19 +374,13 @@ def _validate_mcq(items: Any, n: int, keywords: set[str], ctx: str, primary_body
         norm_opts = [str(x or "").strip() for x in opts]
         if any(not o for o in norm_opts):
             continue
-        anchor = " ".join([q] + norm_opts)
-        ev_raw = str(it.get("evidence") or "").strip()
-        evidence = _finalize_evidence(body, ev_raw, anchor, keywords)
-        if not evidence:
-            continue
-        cleaned.append(
-            {
-                "question": q,
-                "options": norm_opts,
-                "answer_index": ai_i,
-                "evidence": evidence,
-            }
-        )
+        source = str(it.get("source") or "notes").strip()
+        cleaned.append({
+            "question": q,
+            "options": norm_opts,
+            "answer_index": ai_i,
+            "source": source,
+        })
     return cleaned if len(cleaned) >= 1 else None
 
 
@@ -568,64 +443,54 @@ def _synthetic_mcq_from_body(body: str, n: int) -> list[dict[str, Any]]:
     return out
 
 
-def _synthetic_mind_map(body: str) -> dict[str, Any]:
-    b = (body or "").strip()
-    lines = [ln.strip() for ln in b.splitlines() if 18 <= len(ln.strip()) <= 220][:14]
-    if len(lines) < 2:
-        step = 60
-        lines = [b[i : i + step].strip() for i in range(0, min(len(b), 480), step) if len(b[i : i + step].strip()) >= 12][
-            :10
-        ]
-    if len(lines) < 2:
-        return {"nodes": [], "edges": []}
-    nodes = [{"id": str(i + 1), "label": lines[i][:90], "source_quote": lines[i][:220]} for i in range(len(lines))]
-    edges = [{"source": str(i), "target": str(i + 1), "label": ""} for i in range(1, len(nodes))]
-    return {"nodes": nodes, "edges": edges}
-
 
 def cheap_study_json(context: str, task: str, n: int) -> tuple[Any, str | None]:
     ctx = context[:60000]
     body = _primary_body_from_study_ctx(ctx)
     keywords = _context_keywords(body or ctx)
-    if len(keywords) < 6:
-        return None, "Not enough usable note content for grounded study generation."
+    if len(keywords) < 4:
+        return None, "Not enough usable note content for study generation."
+
     if task == "flashcards":
-        prompt = f"""You are generating study material ONLY from the provided notes context.
-STRICT RULES:
-- Use only facts/concepts that appear in the context.
-- Do NOT use outside knowledge, generic filler, or random topics.
-- If context is insufficient, still stay within context and produce shorter/simpler cards.
-- Return EXACTLY {n} items.
-- Output ONLY a JSON array of objects with keys "front", "back", "evidence". No markdown fence.
-- "evidence" must be a contiguous quote copied from the PRIMARY FILE CONTENT section (>= 12 chars). Copy punctuation and wording literally when possible.
-- Include exact terminology/phrases from the notes where possible.
-
-Notes context:
-{ctx}
-"""
+        prompt = (
+            f"You are generating exam-preparation flashcards for a student.\n\n"
+            f"RULES:\n"
+            f"1. Generate EXACTLY {n} flashcards.\n"
+            f"2. PRIMARY SOURCE: the notes below. Most cards (~70%) should test concepts directly from the notes.\n"
+            f"3. EXTENDED SOURCE: for the remaining ~30%, create cards on closely related concepts from the SAME subject "
+            f"   that a student should know for exam preparation — but NEVER drift to unrelated subjects.\n"
+            f"4. Mix difficulty: include definitions, conceptual 'why' questions, tricky edge-case cards, "
+            f"   and application/problem-solving cards.\n"
+            f"5. 'front' = question or prompt. 'back' = concise, correct answer.\n"
+            f"6. 'source' = 'notes' if from the notes, 'subject_knowledge' if extended.\n"
+            f"7. Output ONLY a JSON array. No markdown fence, no extra text.\n"
+            f"   Each object: {{\"front\": str, \"back\": str, \"source\": str}}\n\n"
+            f"Notes:\n{ctx}"
+        )
     else:
-        prompt = f"""You are generating study material ONLY from the provided notes context.
-STRICT RULES:
-- Use only facts/concepts that appear in the context.
-- Do NOT use outside knowledge, generic filler, or random topics.
-- Keep questions grounded in the notes wording/ideas.
-- Return EXACTLY {n} items.
-- Output ONLY a JSON array of objects with keys "question", "options" (array of 4 strings), "answer_index" (0-3), "evidence". No markdown fence.
-- "evidence" must be a contiguous quote copied from the PRIMARY FILE CONTENT section (>= 12 chars). Copy punctuation and wording literally when possible.
-- Include exact terminology/phrases from the notes where possible.
+        prompt = (
+            f"You are generating challenging exam-style MCQs for a student.\n\n"
+            f"RULES:\n"
+            f"1. Generate EXACTLY {n} MCQs.\n"
+            f"2. PRIMARY SOURCE: the notes below. Most questions (~70%) should test concepts directly from the notes.\n"
+            f"3. EXTENDED SOURCE: for the remaining ~30%, create questions on closely related concepts from the SAME subject "
+            f"   that commonly appear in exams — but NEVER drift to unrelated subjects.\n"
+            f"4. Mix difficulty: include recall, application, analysis, and tricky 'gotcha' questions.\n"
+            f"5. Each question must have exactly 4 plausible options. Distractors should be realistic, not obviously wrong.\n"
+            f"6. 'source' = 'notes' if from the notes, 'subject_knowledge' if extended.\n"
+            f"7. Output ONLY a JSON array. No markdown fence, no extra text.\n"
+            f"   Each object: {{\"question\": str, \"options\": [str,str,str,str], \"answer_index\": 0-3, \"source\": str}}\n\n"
+            f"Notes:\n{ctx}"
+        )
 
-Notes context:
-{ctx}
-"""
-    attempts = 3
     last_err = "generation failed"
-    for k in range(attempts):
-        msg = prompt if k == 0 else (prompt + "\n\nPrevious output was not grounded in notes. Regenerate with stricter note-anchored content.")
+    for k in range(3):
+        msg = prompt if k == 0 else (prompt + "\n\nPrevious output had formatting issues. Regenerate valid JSON strictly following the schema.")
         raw, err = _sarvam_chat_complete(
             [{"role": "user", "content": msg}],
             model=_model_study(),
             max_tokens=8192,
-            temperature=0.05,
+            temperature=0.4,
         )
         if err:
             last_err = err
@@ -640,14 +505,15 @@ Notes context:
                 last_err = "Model returned JSON but not a list of study items."
                 continue
             if task == "flashcards":
-                valid = _validate_flashcards(coerced, n, keywords, ctx, body)
+                valid = _validate_flashcards_smart(coerced, n)
             else:
-                valid = _validate_mcq(coerced, n, keywords, ctx, body)
+                valid = _validate_mcq_smart(coerced, n)
             if valid is not None and len(valid) >= 1:
                 return valid, None
-            last_err = "Model output was not grounded in selected notes."
+            last_err = "Model output did not match expected schema."
         except json.JSONDecodeError as e:
             last_err = f"invalid JSON: {e}"
+
     primary = (body or _primary_body_from_study_ctx(ctx) or "").strip()
     if len(primary) >= 12:
         if task == "flashcards":
@@ -659,79 +525,35 @@ Notes context:
     return None, last_err
 
 
-def _prune_mind_map(data: dict, primary_body: str, keywords: set[str]) -> dict | None:
-    """Keep nodes grounded in notes; repair or drop bad source_quote; filter edges to kept ids."""
-    body = (primary_body or "").strip()
-    if len(body) < 12:
-        return None
-    nodes_raw = data.get("nodes") or []
-    edges_raw = data.get("edges") or []
-    if not isinstance(nodes_raw, list):
-        return None
-    kept: list[dict[str, str]] = []
-    for n in nodes_raw:
-        if not isinstance(n, dict):
-            continue
-        nid = str(n.get("id") or "").strip()
-        label = str(n.get("label") or "").strip()
-        quote = str(n.get("source_quote") or "").strip()
-        if not nid or not label:
-            continue
-        final_quote = quote if quote and _contains_context_quote(body, quote) else ""
-        if not final_quote:
-            final_quote = _pick_evidence_span(body, label + " " + quote)
-        if not final_quote or not _contains_context_quote(body, final_quote):
-            continue
-        kept.append({"id": nid, "label": label, "source_quote": final_quote})
-    if len(kept) < 2:
-        return None
-    kept_ids = {n["id"] for n in kept}
-    kept_edges: list[dict[str, str]] = []
-    if isinstance(edges_raw, list):
-        for e in edges_raw:
-            if not isinstance(e, dict):
-                continue
-            s, t = str(e.get("source") or ""), str(e.get("target") or "")
-            if s in kept_ids and t in kept_ids:
-                kept_edges.append(
-                    {
-                        "source": s,
-                        "target": t,
-                        "label": str(e.get("label") or ""),
-                    }
-                )
-    return {"nodes": kept, "edges": kept_edges}
-
-
-def mind_map_json(context: str) -> tuple[dict | None, str | None]:
-    ctx = context[:60000]
+def topic_summary(context: str) -> tuple[str | None, str | None]:
+    """Generate a concise 100-150 word summary covering all key topics from the notes."""
+    ctx = (context or "").strip()[:60000]
     body = _primary_body_from_study_ctx(ctx)
     keywords = _context_keywords(body or ctx)
-    if len(keywords) < 6:
-        return None, "Not enough usable note content for grounded mind map generation."
-    prompt = f"""Build a mind map ONLY from the provided notes context.
-STRICT RULES:
-- Use only concepts present in the context.
-- Do NOT add outside topics or generic unrelated nodes.
-- Reuse notes terminology in node labels.
+    if len(keywords) < 4:
+        return None, "Not enough usable note content for summary generation."
 
-Output a single JSON object with:
-"nodes": [ {{"id": string, "label": string, "source_quote": string}} ],
-"edges": [ {{"source": string, "target": string, "label": string}} ]
-Use 8-25 nodes max. IDs must match between edges and nodes. No markdown fence.
-"source_quote" must be a contiguous quote from PRIMARY FILE CONTENT (>= 12 chars).
+    prompt = (
+        "You are a study assistant. Read the student's notes below and write a SINGLE, "
+        "concise summary of 100-150 words.\n\n"
+        "RULES:\n"
+        "1. Cover ALL major topics, definitions, formulas, and key takeaways from the notes.\n"
+        "2. Use the same terminology as the notes.\n"
+        "3. Structure: start with the overarching topic, then list key concepts in logical order.\n"
+        "4. Do NOT add content from outside the notes — summarize only what is provided.\n"
+        "5. Write in plain text paragraphs (no bullet points, no JSON, no markdown headers).\n"
+        "6. Aim for exactly 100-150 words. Be dense and information-rich.\n\n"
+        f"Notes:\n{ctx}"
+    )
 
-Notes context:
-{ctx}
-"""
     last_err = "generation failed"
-    for k in range(3):
-        msg = prompt if k == 0 else (prompt + "\n\nPrevious output used unrelated topics. Regenerate strictly from notes context.")
+    for k in range(2):
+        msg = prompt if k == 0 else (prompt + "\n\nPrevious output was too long or formatted incorrectly. Write 100-150 words of plain text only.")
         raw, err = _sarvam_chat_complete(
             [{"role": "user", "content": msg}],
             model=_model_study(),
-            max_tokens=4096,
-            temperature=0.05,
+            max_tokens=1024,
+            temperature=0.2,
         )
         if err:
             last_err = err
@@ -739,27 +561,18 @@ Notes context:
         if not raw:
             last_err = "empty model output"
             continue
-        try:
-            data = _parse_json_loose(raw)
-            if not isinstance(data, dict):
-                last_err = "invalid shape"
-                continue
-            nodes = data.get("nodes")
-            if not isinstance(nodes, list) or not nodes:
-                last_err = "invalid shape"
-                continue
-            pruned = _prune_mind_map(data, body, keywords)
-            if pruned is None:
-                last_err = "Mind map was not grounded in selected notes."
-                continue
-            return pruned, None
-        except json.JSONDecodeError as e:
-            last_err = f"invalid JSON: {e}"
-    primary = (body or _primary_body_from_study_ctx(ctx) or "").strip()
-    if len(primary) >= 40:
-        syn = _synthetic_mind_map(primary)
-        if syn.get("nodes") and len(syn["nodes"]) >= 2:
-            return syn, None
+        text = raw.strip()
+        text = re.sub(r"^```(?:text)?\s*", "", text)
+        text = re.sub(r"\s*```\s*$", "", text)
+        if len(text) >= 40:
+            return text, None
+        last_err = "summary too short"
+
+    if body and len(body) >= 60:
+        sentences = [s.strip() for s in re.split(r"[.!?\n]+", body) if len(s.strip()) > 20]
+        fallback = ". ".join(sentences[:8])
+        if len(fallback) >= 40:
+            return fallback[:600] + ".", None
     return None, last_err
 
 
