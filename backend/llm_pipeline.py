@@ -253,7 +253,7 @@ def sarvam_general_answer(question: str) -> tuple[str | None, str | None]:
 
 
 def sarvam_rag_answer(question: str, context: str) -> tuple[str | None, str | None]:
-    """Answer strictly from provided notes context."""
+    """Answer from notes-first context with constrained subject verification."""
     ctx = (context or "").strip()[:60000]
     q = (question or "").strip()
     if not q:
@@ -262,9 +262,13 @@ def sarvam_rag_answer(question: str, context: str) -> tuple[str | None, str | No
         {
             "role": "system",
             "content": (
-                "You are a teaching assistant answering ONLY from the provided notes excerpts. "
-                "Do not claim inability to access files. "
-                "If answer is not present in the excerpts, say that clearly and suggest what to open/upload."
+                "You are a smart study assistant for course preparation. "
+                "Use the provided notes excerpts as the primary grounding source. "
+                "If the exact concept is missing in notes, DO NOT stop with a refusal. "
+                "Instead, answer using standard, verified subject knowledge that is consistent with the course topic. "
+                "Never drift to unrelated domains. "
+                "When knowledge goes beyond the notes, clearly label that part as 'Concept support'. "
+                "Do not claim inability to access files."
             ),
         },
         {
@@ -272,7 +276,12 @@ def sarvam_rag_answer(question: str, context: str) -> tuple[str | None, str | No
             "content": (
                 f"Question:\n{q}\n\n"
                 f"Notes excerpts:\n{ctx}\n\n"
-                "Answer using only these excerpts."
+                "Answer policy:\n"
+                "1) Start with the best answer directly.\n"
+                "2) Prefer notes evidence when available.\n"
+                "3) If notes are incomplete, still explain the concept correctly using 'Concept support' (verified subject knowledge).\n"
+                "4) If user asks for tricky exam practice, generate 8-10 challenging questions and concise answer keys.\n"
+                "5) Keep response concise, correct, and study-friendly."
             ),
         },
     ]

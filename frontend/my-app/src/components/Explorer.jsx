@@ -4,6 +4,7 @@ import {
   VscNewFolder,
   VscRefresh,
   VscCollapseAll,
+  VscFolderOpened,
 } from "react-icons/vsc";
 import { BsFileEarmarkPdf } from "react-icons/bs";
 import FileUpload from "./FileUpload";
@@ -223,21 +224,6 @@ export default function Explorer({
     const mode = createInputMode;
     const parentForCreate = parentPathForCreate;
 
-    // Must not await IndexedDB before showDirectoryPicker — that drops user activation and the picker never opens.
-    if (mode === "folder" && !parentForCreate && isUserFolderPickerSupported() && !hasUserDiskRootLinkedSync()) {
-      try {
-        const linked = await linkNoteScannerFolder();
-        if (linked === null) {
-          /* user cancelled setup or wrong folder name — still create the course folder in the app */
-        }
-      } catch (e) {
-        if (e?.name !== "AbortError") {
-          alert(e?.message || "Could not link your NoteScanner folder.");
-          return;
-        }
-      }
-    }
-
     setCreateInputMode(null);
     setCreateInputValue("");
     try {
@@ -448,6 +434,18 @@ export default function Explorer({
   };
 
   const uploadPath = selectedIsFolder && selectedItem ? selectedItem : "";
+  const handleLinkDiskFolder = async () => {
+    try {
+      const linked = await linkNoteScannerFolder();
+      if (linked) {
+        alert(`Linked folder "${linked.name}" for local mirroring.`);
+      }
+    } catch (e) {
+      if (e?.name !== "AbortError") {
+        alert(e?.message || "Could not link your NoteScanner folder.");
+      }
+    }
+  };
 
   return (
     <div className="vsc2-explorer">
@@ -516,6 +514,15 @@ export default function Explorer({
               aria-label="New Folder"
             >
               <VscNewFolder size={16} />
+            </button>
+            <button
+              type="button"
+              className="vsc2-header-btn"
+              onClick={handleLinkDiskFolder}
+              title="Link NoteScanner folder on disk"
+              aria-label="Link NoteScanner folder on disk"
+            >
+              <VscFolderOpened size={16} />
             </button>
             <button
               type="button"
