@@ -29,7 +29,7 @@ jobs:
       - name: Install and build
         working-directory: frontend/my-app
         env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL != '' && secrets.VITE_API_URL || vars.VITE_API_URL }}
         run: |
           if [ -z "$VITE_API_URL" ]; then
             echo "VITE_API_URL secret is missing. Add your backend URL (e.g. https://diptidhawade-NoteScanner.hf.space)." >&2
