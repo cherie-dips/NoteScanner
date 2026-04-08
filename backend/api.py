@@ -729,6 +729,18 @@ def query_notes(
         embed = _get_query_embedder()
         q_emb = embed.encode([full_q]).tolist()[0]
 
+        def _query_path_candidates(path: str) -> list[str]:
+            """For image/text-extracted notes, also try the .txt twin path."""
+            p = _strip_storage_path(path or "")
+            if not p:
+                return []
+            out = [p]
+            stem, ext = os.path.splitext(p)
+            if ext and ext.lower() != ".txt":
+                out.append(stem + ".txt")
+            # preserve order, dedupe
+            return list(dict.fromkeys(out))
+
         def _cos(a: list[float], b: list[float]) -> float:
             dot = sum((x * y) for x, y in zip(a, b))
             na = (sum((x * x) for x in a) or 1e-9) ** 0.5
@@ -748,25 +760,31 @@ def query_notes(
             return out
 
         def _query_path_docs(path: str, n_results: int = 5) -> list[dict]:
-            res = col.query(
-                query_embeddings=[q_emb],
-                n_results=n_results,
-                where={"path": path},
-                include=["documents", "metadatas", "distances"],
-            )
-            ids = (res.get("ids") or [[]])[0] if isinstance(res.get("ids"), list) else []
-            docs = (res.get("documents") or [[]])[0] if isinstance(res.get("documents"), list) else []
-            metas = (res.get("metadatas") or [[]])[0] if isinstance(res.get("metadatas"), list) else []
-            dists = (res.get("distances") or [[]])[0] if isinstance(res.get("distances"), list) else []
             out = []
-            for i, cid in enumerate(ids):
-                content = (docs[i] if i < len(docs) else "") or ""
-                if not content.strip():
-                    continue
-                md = metas[i] if i < len(metas) and isinstance(metas[i], dict) else {}
-                dist = float(dists[i]) if i < len(dists) and dists[i] is not None else 2.0
-                score = 1.0 - dist
-                out.append({"id": cid, "content": content, "metadata": md, "_score": score})
+            seen_local: set[str] = set()
+            for p in _query_path_candidates(path):
+                res = col.query(
+                    query_embeddings=[q_emb],
+                    n_results=n_results,
+                    where={"path": p},
+                    include=["documents", "metadatas", "distances"],
+                )
+                ids = (res.get("ids") or [[]])[0] if isinstance(res.get("ids"), list) else []
+                docs = (res.get("documents") or [[]])[0] if isinstance(res.get("documents"), list) else []
+                metas = (res.get("metadatas") or [[]])[0] if isinstance(res.get("metadatas"), list) else []
+                dists = (res.get("distances") or [[]])[0] if isinstance(res.get("distances"), list) else []
+                for i, cid in enumerate(ids):
+                    key = f"{p}|{cid}"
+                    if key in seen_local:
+                        continue
+                    seen_local.add(key)
+                    content = (docs[i] if i < len(docs) else "") or ""
+                    if not content.strip():
+                        continue
+                    md = metas[i] if i < len(metas) and isinstance(metas[i], dict) else {}
+                    dist = float(dists[i]) if i < len(dists) and dists[i] is not None else 2.0
+                    score = 1.0 - dist
+                    out.append({"id": cid, "content": content, "metadata": md, "_score": score})
             out.sort(key=lambda d: d.get("_score", -9), reverse=True)
             return out
 
