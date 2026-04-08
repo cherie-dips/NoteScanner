@@ -35,7 +35,7 @@ jobs:
             echo "VITE_API_URL secret is missing. Add your backend URL (e.g. https://diptidhawade-NoteScanner.hf.space)." >&2
             exit 1
           fi
-          npm ci
+          npm install
           npm run build
 
       - name: Upload artifact
