@@ -1,13 +1,13 @@
-version: "3.9"
 services:
   # Omit or stop this service if you use Chroma Cloud (CHROMA_API_KEY in .env).
   chromadb:
-    image: chromadb/chroma
+    image: chromadb/chroma:1.0.21
     container_name: notescanner-chromadb
     ports:
       - "8100:8000"
     volumes:
-      - chroma_data:/chroma/chroma
+      # Chroma 1.x stores its data in /data inside the container.
+      - chroma_data:/data
 
   backend:
     build: .
@@ -19,9 +19,17 @@ services:
     environment:
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
+      - PORT=8000
     ports:
       - "8000:8000"
-    command: ["uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    # One worker: the chat-upload cache, request limits and per-user locks live in process memory.
+    command: ["uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
 
   frontend:
     build:
@@ -30,6 +38,8 @@ services:
     container_name: notescanner-frontend
     depends_on:
       - backend
+    environment:
+      - VITE_API_URL=http://localhost:8000
     ports:
       - "5173:5173"
     volumes:

@@ -72,3 +72,8 @@ export function relocateLocalEntry(oldPath, newPath, isFolder) {
     _map.set(to, entry);
   }
 }
+
+/** Drop every local preview copy (e.g. after "Delete all my notes"). */
+export function forgetAllLocalFiles() {
+  for (const k of [..._map.keys()]) forgetPath(k);
+}

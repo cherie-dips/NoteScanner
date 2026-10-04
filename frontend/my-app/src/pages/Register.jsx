@@ -1,17 +1,22 @@
 import { useState } from "react";
 import { API_BASE } from "../config";
-import { setSessionId } from "../auth";
+import { setSessionId, markNewAccount, apiErrorMessage, errorText } from "../auth";
 import "../index.css";
 
-export default function Register({ onRegister, onSwitchToLogin, onClose }) {
+export default function Register({ onRegister, onSwitchToLogin, onClose, onShowPrivacy }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!acceptedPrivacy) {
+      setError("Please read and accept the privacy note.");
+      return;
+    }
     setError("");
     setLoading(true);
     try {
@@ -19,31 +24,22 @@ export default function Register({ onRegister, onSwitchToLogin, onClose }) {
       formData.append("email", email);
       formData.append("password", password);
       formData.append("name", name);
+      formData.append("accepted_privacy", "true");
       const url = `${API_BASE || "http://localhost:8000"}/register`;
       const res = await fetch(url, {
         method: "POST",
         body: formData,
       });
-      let data = {};
-      try {
-        data = await res.json();
-      } catch (_) {
-        if (!res.ok) setError(res.statusText || "Registration failed.");
-        return;
-      }
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.detail || data.error || "Registration failed.");
+        setError(apiErrorMessage(data, res));
         return;
       }
-      if (data.session_id) setSessionId(data.session_id, data.name ?? undefined);
+      if (data.session_id) setSessionId(data.session_id, data.name ?? undefined, data.user_id ?? undefined);
+      markNewAccount(data.user_id);
       onRegister?.();
     } catch (err) {
-      const msg = err?.message || "";
-      setError(
-        API_BASE
-          ? "Network error. Is the backend running? Start it with: uvicorn backend.api:app --host 0.0.0.0 --port 8000"
-          : "Network error. Set VITE_API_URL=http://localhost:8000 and ensure the backend is running."
-      );
+      setError(errorText(err));
     } finally {
       setLoading(false);
     }
@@ -74,14 +70,30 @@ export default function Register({ onRegister, onSwitchToLogin, onClose }) {
           />
           <input
             type="password"
-            placeholder="Password"
+            placeholder="Password (at least 8 characters)"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="auth-input"
             required
-            minLength={6}
+            minLength={8}
+            maxLength={72}
             autoComplete="new-password"
           />
+          <label className="auth-consent">
+            <input
+              type="checkbox"
+              className="auth-consent-checkbox"
+              checked={acceptedPrivacy}
+              onChange={(e) => setAcceptedPrivacy(e.target.checked)}
+              required
+            />
+            <span>
+              I've read the{" "}
+              <button type="button" className="auth-link auth-privacy-link" onClick={onShowPrivacy}>
+                privacy note
+              </button>
+            </span>
+          </label>
           {error && <p className="auth-error">{error}</p>}
           <button type="submit" className="auth-btn" disabled={loading}>
             {loading ? "Creating account…" : "Sign up"}

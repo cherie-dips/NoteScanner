@@ -1,76 +1,17 @@
 import { useState, useRef } from "react";
-import { LuMic, LuRotateCcw } from "react-icons/lu";
-import { API_BASE } from "../config";
-const API = API_BASE || "http://localhost:8000";
-import { authFetch, ensureGuestId, getGuestId, apiErrorMessage } from "../auth";
-import { registerLocalFile } from "../localFileStore";
-import { getNotesMirrorRoot, mirrorUploadedBytes } from "../localDiskFolder";
-import { sanitizeVirtualPath } from "../virtualPath";
+import { LuMic } from "react-icons/lu";
 import "../index.css";
 
-export default function ChatPage({ onSignInClick }) {
-  const makeSessionId = () =>
-    (typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+/** Signed-out landing page. Uploading and asking questions use paid AI services, so they need an account. */
+export default function ChatPage({ onSignInClick, onShowPrivacy }) {
   const [prompt, setPrompt] = useState("");
-  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [listening, setListening] = useState(false);
-  const [chatSessionId, setChatSessionId] = useState(makeSessionId);
-  const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-    setLoading(true);
-    try {
-      const { root: mirrorRoot } = await getNotesMirrorRoot();
-      await ensureGuestId();
-      if (!getGuestId()) {
-        setMessage({ type: "error", text: "Could not connect to server. Is the backend running at http://localhost:8000?" });
-        setLoading(false);
-        return;
-      }
-      const formData = new FormData();
-      formData.append("chat_session_id", chatSessionId);
-      formData.append("file", file);
-      const res = await authFetch(`${API}/chat/upload_ephemeral`, {
-        method: "POST",
-        body: formData,
-      });
-      let data = {};
-      try {
-        data = await res.json();
-      } catch (_) {}
-      const rel = sanitizeVirtualPath(data.path || file.name || "");
-      if (rel && file) {
-        registerLocalFile(rel, file);
-        try {
-          await mirrorUploadedBytes(file, rel, mirrorRoot);
-        } catch (mirrorErr) {
-          console.error("Local mirror write failed:", mirrorErr);
-        }
-      }
-      if (res.ok) {
-        setMessage({ type: "success", text: `Uploaded "${file.name}" for this chat session only.` });
-      } else {
-        setMessage({ type: "error", text: apiErrorMessage(data, res) });
-      }
-    } catch (err) {
-      setMessage({
-        type: "error",
-        text: "Upload failed. Is the backend running? Start it with: uvicorn backend.api:app --host 0.0.0.0 --port 8000",
-      });
-    } finally {
-      setLoading(false);
-    }
+  const askToSignIn = (text) => {
+    setMessage({ type: "info", text });
+    onSignInClick?.();
   };
 
   const handleVoiceInput = () => {
@@ -105,10 +46,8 @@ export default function ChatPage({ onSignInClick }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const text = prompt.trim();
-    if (!text) return;
-    setMessage({ type: "info", text: "Sign in to query your notes with AI. Use the Sign in button above." });
-    setPrompt("");
+    if (!prompt.trim()) return;
+    askToSignIn("Sign in to ask questions about your notes.");
   };
 
   return (
@@ -128,9 +67,9 @@ export default function ChatPage({ onSignInClick }) {
             <button
               type="button"
               className="chat-page-plus"
-              onClick={handleUploadClick}
-              title="Upload files or images"
-              aria-label="Upload"
+              onClick={() => askToSignIn("Sign in to upload notes and chat with them.")}
+              title="Sign in to upload files or images"
+              aria-label="Upload (sign in required)"
             >
               +
             </button>
@@ -140,7 +79,6 @@ export default function ChatPage({ onSignInClick }) {
               placeholder="Ask anything"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              disabled={loading}
             />
             <button
               type="button"
@@ -150,21 +88,6 @@ export default function ChatPage({ onSignInClick }) {
               aria-label={listening ? "Stop voice input" : "Voice input"}
             >
               <LuMic size={18} />
-            </button>
-            <button
-              type="button"
-              className="chat-page-mic"
-              onClick={async () => {
-                const fd = new FormData();
-                fd.append("chat_session_id", chatSessionId);
-                await authFetch(`${API}/chat/session/clear`, { method: "POST", body: fd }).catch(() => {});
-                setChatSessionId(makeSessionId());
-                setMessage({ type: "info", text: "Chat cache cleared." });
-              }}
-              title="Refresh chat"
-              aria-label="Refresh chat"
-            >
-              <LuRotateCcw size={18} />
             </button>
           </div>
           {message && (
@@ -190,14 +113,11 @@ export default function ChatPage({ onSignInClick }) {
         </div>
       </main>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*,.pdf"
-        onChange={handleFileChange}
-        style={{ display: "none" }}
-        aria-hidden
-      />
+      <footer className="chat-page-footer">
+        <button type="button" className="chat-page-footer-link chat-page-privacy-link" onClick={onShowPrivacy}>
+          Privacy
+        </button>
+      </footer>
     </div>
   );
 }

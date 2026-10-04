@@ -1,12 +1,17 @@
 """LLM + OCR: Sarvam AI — Document Intelligence (Sarvam Vision) + Chat Completions."""
 import json
+import logging
 import os
+import random
 import re
 import tempfile
+import threading
 import zipfile
-from typing import Any
+from typing import Any, Iterator
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 # Chat models (see https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/chat-completion/overview)
 _DEFAULT_MODEL_RAG = "sarvam-105b"
@@ -18,6 +23,35 @@ _GROUNDING_STOPWORDS = {
     "some", "such", "than", "that", "their", "there", "these", "they", "this", "those", "through",
     "under", "using", "very", "what", "when", "where", "which", "while", "with", "would",
 }
+
+
+_usage = threading.local()
+
+
+def _add_usage(prompt_tokens: int, completion_tokens: int) -> None:
+    _usage.prompt = getattr(_usage, "prompt", 0) + int(prompt_tokens or 0)
+    _usage.completion = getattr(_usage, "completion", 0) + int(completion_tokens or 0)
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token count (about 4 characters per token) when the API doesn't report usage."""
+    return max(1, len(text or "") // 4)
+
+
+def take_usage() -> dict:
+    """AI tokens used by chat calls made in this thread since the last call (then resets to zero)."""
+    out = {"prompt_tokens": getattr(_usage, "prompt", 0), "completion_tokens": getattr(_usage, "completion", 0)}
+    _usage.prompt = _usage.completion = 0
+    return out
+
+
+def language_instruction(language: str | None) -> str:
+    if not language or language == "English":
+        return ""
+    return (
+        f"Write all of your output in {language}. Keep formulas, code, units and standard technical "
+        "terms as they are (English or LaTeX)."
+    )
 
 
 def _sarvam_api_key() -> str | None:
@@ -72,6 +106,11 @@ def _sarvam_chat_complete(
         if not choices:
             return None, "no choices in response"
         content = (choices[0].get("message") or {}).get("content")
+        usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+        _add_usage(
+            usage.get("prompt_tokens") or estimate_tokens(json.dumps(messages)),
+            usage.get("completion_tokens") or estimate_tokens(str(content or "")),
+        )
         if content is None or not str(content).strip():
             return None, "empty model content"
         return str(content).strip(), None
@@ -119,77 +158,60 @@ def _extract_markdown_from_output_zip(zip_path: str) -> str:
         return z.read(pick).decode("utf-8", errors="replace").strip()
 
 
-def _document_intelligence_image(image_bytes: bytes, mime: str) -> tuple[str | None, str | None]:
+def _strings_in(value) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        out = []
+        for k in ("text", "content", "markdown"):
+            if isinstance(value.get(k), str):
+                out.append(value[k])
+        for v in value.values():
+            if isinstance(v, (dict, list)):
+                out.extend(_strings_in(v))
+        return out
+    if isinstance(value, list):
+        return [s for v in value for s in _strings_in(v)]
+    return []
+
+
+def _page_texts_from_output_zip(zip_path: str) -> list[str]:
+    """Per-page text from metadata/page_NNN.json files in a Document Intelligence output zip ([] if absent)."""
+    pages: list[tuple[int, str]] = []
+    try:
+        with zipfile.ZipFile(zip_path, "r") as z:
+            for name in z.namelist():
+                m = re.search(r"page_(\d+)\.json$", name)
+                if not m:
+                    continue
+                try:
+                    data = json.loads(z.read(name).decode("utf-8", errors="replace"))
+                except json.JSONDecodeError:
+                    continue
+                pages.append((int(m.group(1)), " ".join(_strings_in(data))))
+    except zipfile.BadZipFile:
+        return []
+    return [text for _, text in sorted(pages)]
+
+
+def _document_intelligence(file_bytes: bytes, mime: str) -> tuple[str | None, str | None]:
+    text, err, _pages = _document_intelligence_with_pages(file_bytes, mime)
+    return text, err
+
+
+def _document_intelligence_with_pages(file_bytes: bytes, mime: str) -> tuple[str | None, str | None, list[str]]:
     """
-    OCR / layout text via Sarvam Document Intelligence (Sarvam Vision).
+    OCR / layout text via Sarvam Document Intelligence (Sarvam Vision) for a PDF or an image.
     See: https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/document-intelligence/overview
     """
     key = _sarvam_api_key()
     if not key:
-        return None, "SARVAM_API_KEY not configured"
+        return None, "SARVAM_API_KEY not configured", []
     try:
         from sarvamai import SarvamAI
     except ImportError:
-        return None, "sarvamai package not installed (pip install sarvamai)"
+        return None, "sarvamai package not installed (pip install sarvamai)", []
 
-    raw_bytes, suffix = _prepare_image_for_document_intel(image_bytes, mime)
-    tmp_image: str | None = None
-    tmp_zip: str | None = None
-    timeout = float(os.getenv("SARVAM_DOC_INTEL_TIMEOUT", "180"))
-    try:
-        fd, tmp_image = tempfile.mkstemp(suffix=suffix)
-        os.write(fd, raw_bytes)
-        os.close(fd)
-        fd = -1
-
-        client = SarvamAI(api_subscription_key=key, timeout=timeout)
-        lang = os.getenv("SARVAM_DOC_INTEL_LANGUAGE", "en-IN").strip()
-        job = client.document_intelligence.create_job(language=lang, output_format="md")
-        job.upload_file(tmp_image)
-        job.start()
-        status = job.wait_until_complete(timeout=timeout)
-        state = str(getattr(status, "job_state", "") or "")
-        if state not in ("Completed", "PartiallyCompleted"):
-            return None, f"Document intelligence job state: {state or 'unknown'}"
-
-        zfd, tmp_zip = tempfile.mkstemp(suffix=".zip")
-        os.close(zfd)
-        job.download_output(tmp_zip)
-        text = _extract_markdown_from_output_zip(tmp_zip)
-        if not text:
-            return None, "empty document intelligence output"
-        return text, None
-    except TimeoutError as e:
-        return None, str(e)
-    except Exception as e:
-        return None, str(e)
-    finally:
-        if tmp_image and os.path.isfile(tmp_image):
-            try:
-                os.unlink(tmp_image)
-            except OSError:
-                pass
-        if tmp_zip and os.path.isfile(tmp_zip):
-            try:
-                os.unlink(tmp_zip)
-            except OSError:
-                pass
-
-
-def transcribe_handwritten_image(image_bytes: bytes, mime: str = "image/jpeg") -> tuple[str | None, str | None]:
-    """Sarvam Vision (Document Intelligence) → markdown/plain text from note images."""
-    return _document_intelligence_image(image_bytes, mime)
-
-
-def transcribe_document_bytes(file_bytes: bytes, mime: str = "application/pdf") -> tuple[str | None, str | None]:
-    """Sarvam Vision (Document Intelligence) OCR for uploaded PDFs/images."""
-    key = _sarvam_api_key()
-    if not key:
-        return None, "SARVAM_API_KEY not configured"
-    try:
-        from sarvamai import SarvamAI
-    except ImportError:
-        return None, "sarvamai package not installed (pip install sarvamai)"
     raw_bytes, suffix = _prepare_document_for_document_intel(file_bytes, mime)
     tmp_file: str | None = None
     tmp_zip: str | None = None
@@ -206,58 +228,46 @@ def transcribe_document_bytes(file_bytes: bytes, mime: str = "application/pdf") 
         status = job.wait_until_complete(timeout=timeout)
         state = str(getattr(status, "job_state", "") or "")
         if state not in ("Completed", "PartiallyCompleted"):
-            return None, f"Document intelligence job state: {state or 'unknown'}"
+            return None, f"Document intelligence job state: {state or 'unknown'}", []
         zfd, tmp_zip = tempfile.mkstemp(suffix=".zip")
         os.close(zfd)
         job.download_output(tmp_zip)
         text = _extract_markdown_from_output_zip(tmp_zip)
         if not text:
-            return None, "empty document intelligence output"
-        return text, None
-    except TimeoutError as e:
-        return None, str(e)
+            return None, "empty document intelligence output", []
+        return text, None, _page_texts_from_output_zip(tmp_zip)
     except Exception as e:
-        return None, str(e)
+        logger.warning("Sarvam document intelligence failed: %s", e)
+        return None, str(e), []
     finally:
-        if tmp_file and os.path.isfile(tmp_file):
-            try:
-                os.unlink(tmp_file)
-            except OSError:
-                pass
-        if tmp_zip and os.path.isfile(tmp_zip):
-            try:
-                os.unlink(tmp_zip)
-            except OSError:
-                pass
+        for tmp in (tmp_file, tmp_zip):
+            if tmp and os.path.isfile(tmp):
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
 
 
-def sarvam_general_answer(question: str) -> tuple[str | None, str | None]:
-    """Answer without retrieving text from Chroma (no RAG / no stored course excerpts)."""
-    messages: list[dict[str, str]] = [
-        {
-            "role": "system",
-            "content": (
-                "You are a clear, accurate teaching assistant. Answer the student's question directly. "
-                "If essential information is missing, say what you would need to know."
-            ),
-        },
-        {"role": "user", "content": question},
-    ]
-    return _sarvam_chat_complete(
-        messages,
-        model=_model_rag(),
-        max_tokens=8192,
-        temperature=0.3,
-    )
+def transcribe_handwritten_image(image_bytes: bytes, mime: str = "image/jpeg") -> tuple[str | None, str | None]:
+    """Sarvam Vision (Document Intelligence) → markdown/plain text from note images."""
+    return _document_intelligence(image_bytes, mime or "image/jpeg")
 
 
-def sarvam_rag_answer(question: str, context: str) -> tuple[str | None, str | None]:
-    """Answer from notes-first context with constrained subject verification."""
+def transcribe_document_bytes(file_bytes: bytes, mime: str = "application/pdf") -> tuple[str | None, str | None]:
+    """Sarvam Vision (Document Intelligence) OCR for uploaded PDFs/images."""
+    return _document_intelligence(file_bytes, mime)
+
+
+def transcribe_pdf_with_pages(file_bytes: bytes) -> tuple[str | None, str | None, list[str]]:
+    """Like transcribe_document_bytes for a PDF, plus each page's own text (when Sarvam provides it)."""
+    return _document_intelligence_with_pages(file_bytes, "application/pdf")
+
+
+def _rag_messages(question: str, context: str, language: str = "English") -> list[dict[str, str]]:
     ctx = (context or "").strip()[:60000]
     q = (question or "").strip()
-    if not q:
-        return None, "Empty query"
-    messages: list[dict[str, str]] = [
+    lang = language_instruction(language)
+    messages = [
         {
             "role": "system",
             "content": (
@@ -267,6 +277,7 @@ def sarvam_rag_answer(question: str, context: str) -> tuple[str | None, str | No
                 "- Identify the subject/topic from the notes (e.g. Machine Learning, Linear Algebra, Operating Systems).\n"
                 "- ALWAYS answer the student's question — never refuse or say 'not in notes'.\n"
                 "- When the notes contain the answer, cite specific details from them.\n"
+                "- Excerpts marked (main source) come from files the student marked as most reliable; prefer them.\n"
                 "- When the notes are incomplete, supplement with correct, textbook-level knowledge for THAT subject.\n"
                 "  Mark such additions with '📖 Beyond notes:' so the student knows.\n"
                 "- NEVER drift to unrelated subjects. If asked about something outside the course scope, "
@@ -275,7 +286,8 @@ def sarvam_rag_answer(question: str, context: str) -> tuple[str | None, str | No
                 "- Explain like a great tutor: clear, concise, with examples.\n"
                 "- For problem-solving: show step-by-step working.\n"
                 "- For tricky exam practice: generate 5-8 challenging questions with concise answer keys.\n"
-                "- Use bullet points and short paragraphs for readability.\n"
+                "- Use Markdown: bullet points, short paragraphs, tables when useful.\n"
+                "- Write math in LaTeX: $...$ inline and $$...$$ for display equations.\n"
                 "- Do not claim inability to access files or notes."
             ),
         },
@@ -288,12 +300,65 @@ def sarvam_rag_answer(question: str, context: str) -> tuple[str | None, str | No
             ),
         },
     ]
+    if lang:
+        messages[0]["content"] += "\n- " + lang
+    return messages
+
+
+def sarvam_rag_answer(question: str, context: str, language: str = "English") -> tuple[str | None, str | None]:
+    """Answer from notes-first context with constrained subject verification."""
+    if not (question or "").strip():
+        return None, "Empty query"
     return _sarvam_chat_complete(
-        messages,
+        _rag_messages(question, context, language),
         model=_model_rag(),
         max_tokens=4096,
         temperature=0.3,
     )
+
+
+class LLMError(Exception):
+    """The AI service failed; the message is safe to log, not meant for students."""
+
+
+def sarvam_rag_answer_stream(question: str, context: str, language: str = "English") -> Iterator[str]:
+    """
+    Same answer as sarvam_rag_answer, yielded piece by piece as the model writes it
+    (server-sent events, `stream: true`). Raises LLMError if the request fails.
+    """
+    key = _sarvam_api_key()
+    if not key:
+        raise LLMError("SARVAM_API_KEY not configured")
+    url = f"{_chat_base_url()}/v1/chat/completions"
+    payload = {
+        "model": _model_rag(),
+        "messages": _rag_messages(question, context, language),
+        "max_tokens": 4096,
+        "temperature": 0.3,
+        "stream": True,
+    }
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    try:
+        with httpx.stream("POST", url, headers=headers, json=payload, timeout=300.0) as r:
+            if r.status_code >= 400:
+                r.read()
+                raise LLMError(f"HTTP {r.status_code}: {r.text[:300]}")
+            for line in r.iter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                for choice in chunk.get("choices") or []:
+                    piece = (choice.get("delta") or {}).get("content")
+                    if piece:
+                        yield piece
+    except httpx.HTTPError as e:
+        raise LLMError(str(e)) from e
 
 
 def _parse_json_loose(raw: str) -> Any:
@@ -375,10 +440,14 @@ def _validate_mcq_smart(items: Any, n: int) -> list[dict[str, Any]] | None:
         if any(not o for o in norm_opts):
             continue
         source = str(it.get("source") or "notes").strip()
+        explanation = str(it.get("explanation") or "").strip()
+        order = list(range(4))
+        random.shuffle(order)
         cleaned.append({
             "question": q,
-            "options": norm_opts,
-            "answer_index": ai_i,
+            "options": [norm_opts[i] for i in order],
+            "answer_index": order.index(ai_i),
+            "explanation": explanation,
             "source": source,
         })
     return cleaned if len(cleaned) >= 1 else None
@@ -395,56 +464,7 @@ def _coerce_study_list(parsed: Any) -> list | None:
     return None
 
 
-def _synthetic_flashcards_from_body(body: str, n: int) -> list[dict[str, str]]:
-    b = (body or "").strip()
-    if len(b) < 12:
-        return []
-    chunks = re.split(r"\n{2,}|(?<=[.!?])\s+", b)
-    parts = [p.strip() for p in chunks if len(p.strip()) >= 25]
-    out: list[dict[str, str]] = []
-    for i in range(0, len(parts), 2):
-        if len(out) >= n:
-            break
-        front = parts[i][:220]
-        back = (parts[i + 1] if i + 1 < len(parts) else parts[i])[:400]
-        ev = parts[i][: min(180, len(parts[i]))]
-        if len(ev) < 12:
-            ev = b[:120]
-        if len(front) < 3 or len(back) < 3:
-            continue
-        out.append({"front": front, "back": back, "evidence": ev})
-    if not out:
-        head = b[: min(400, len(b))]
-        ev = b[: min(120, len(b))]
-        if len(ev) >= 12:
-            out.append({"front": "Notes excerpt", "back": head, "evidence": ev})
-    return out[:n]
-
-
-def _synthetic_mcq_from_body(body: str, n: int) -> list[dict[str, Any]]:
-    b = (body or "").strip()
-    if len(b) < 12:
-        return []
-    sentences = [s.strip() for s in re.split(r"[.!?\n]+", b) if len(s.strip()) > 35]
-    out: list[dict[str, Any]] = []
-    for s in sentences[:n]:
-        q = f"Which statement matches the notes? {s[:100]}…"
-        o0 = s[: min(90, len(s))] + ("…" if len(s) > 90 else "")
-        opts = [
-            o0,
-            "The notes do not discuss this topic.",
-            "The opposite of what the notes state.",
-            "None of the above.",
-        ]
-        ev = s[: min(200, len(s))]
-        if len(ev) < 12:
-            ev = b[:120]
-        out.append({"question": q[:400], "options": opts, "answer_index": 0, "evidence": ev})
-    return out
-
-
-
-def cheap_study_json(context: str, task: str, n: int) -> tuple[Any, str | None]:
+def cheap_study_json(context: str, task: str, n: int, language: str = "English") -> tuple[Any, str | None]:
     ctx = context[:60000]
     body = _primary_body_from_study_ctx(ctx)
     keywords = _context_keywords(body or ctx)
@@ -463,7 +483,7 @@ def cheap_study_json(context: str, task: str, n: int) -> tuple[Any, str | None]:
             f"   and application/problem-solving cards.\n"
             f"5. 'front' = question or prompt. 'back' = concise, correct answer.\n"
             f"6. 'source' = 'notes' if from the notes, 'subject_knowledge' if extended.\n"
-            f"7. Output ONLY a JSON array. No markdown fence, no extra text.\n"
+            f"7. Write math in LaTeX ($...$). Output ONLY a JSON array. No markdown fence, no extra text.\n"
             f"   Each object: {{\"front\": str, \"back\": str, \"source\": str}}\n\n"
             f"Notes:\n{ctx}"
         )
@@ -477,12 +497,17 @@ def cheap_study_json(context: str, task: str, n: int) -> tuple[Any, str | None]:
             f"   that commonly appear in exams — but NEVER drift to unrelated subjects.\n"
             f"4. Mix difficulty: include recall, application, analysis, and tricky 'gotcha' questions.\n"
             f"5. Each question must have exactly 4 plausible options. Distractors should be realistic, not obviously wrong.\n"
-            f"6. 'source' = 'notes' if from the notes, 'subject_knowledge' if extended.\n"
-            f"7. Output ONLY a JSON array. No markdown fence, no extra text.\n"
-            f"   Each object: {{\"question\": str, \"options\": [str,str,str,str], \"answer_index\": 0-3, \"source\": str}}\n\n"
+            f"6. 'explanation' = one or two sentences on why the correct option is right (and the tempting wrong one is wrong).\n"
+            f"7. 'source' = 'notes' if from the notes, 'subject_knowledge' if extended.\n"
+            f"8. Write math in LaTeX ($...$). Output ONLY a JSON array. No markdown fence, no extra text.\n"
+            f"   Each object: {{\"question\": str, \"options\": [str,str,str,str], \"answer_index\": 0-3, \"explanation\": str, \"source\": str}}\n\n"
             f"Notes:\n{ctx}"
         )
 
+    lang = language_instruction(language)
+    if lang:
+        prompt = prompt.replace("\n\nNotes:\n", f"\n\n{lang} JSON keys stay in English.\n\nNotes:\n", 1)
+    label = "flashcards" if task == "flashcards" else "MCQs"
     last_err = "generation failed"
     for k in range(3):
         msg = prompt if k == 0 else (prompt + "\n\nPrevious output had formatting issues. Regenerate valid JSON strictly following the schema.")
@@ -514,18 +539,12 @@ def cheap_study_json(context: str, task: str, n: int) -> tuple[Any, str | None]:
         except json.JSONDecodeError as e:
             last_err = f"invalid JSON: {e}"
 
-    primary = (body or _primary_body_from_study_ctx(ctx) or "").strip()
-    if len(primary) >= 12:
-        if task == "flashcards":
-            syn = _synthetic_flashcards_from_body(primary, n)
-        else:
-            syn = _synthetic_mcq_from_body(primary, n)
-        if syn:
-            return syn, None
-    return None, last_err
+    # Never invent study items ourselves: a wrong "answer key" is worse than a clear error.
+    logger.warning("Study generation (%s) failed after retries: %s", task, last_err)
+    return None, f"The AI couldn't generate {label} right now. Please try again."
 
 
-def topic_summary(context: str) -> tuple[str | None, str | None]:
+def topic_summary(context: str, language: str = "English") -> tuple[str | None, str | None]:
     """Generate a concise 100-150 word summary covering all key topics from the notes."""
     ctx = (context or "").strip()[:60000]
     body = _primary_body_from_study_ctx(ctx)
@@ -542,7 +561,8 @@ def topic_summary(context: str) -> tuple[str | None, str | None]:
         "3. Structure: start with the overarching topic, then list key concepts in logical order.\n"
         "4. Do NOT add content from outside the notes — summarize only what is provided.\n"
         "5. Write in plain text paragraphs (no bullet points, no JSON, no markdown headers).\n"
-        "6. Aim for exactly 100-150 words. Be dense and information-rich.\n\n"
+        "6. Aim for exactly 100-150 words. Be dense and information-rich.\n"
+        f"{language_instruction(language)}\n\n"
         f"Notes:\n{ctx}"
     )
 
@@ -568,11 +588,7 @@ def topic_summary(context: str) -> tuple[str | None, str | None]:
             return text, None
         last_err = "summary too short"
 
-    if body and len(body) >= 60:
-        sentences = [s.strip() for s in re.split(r"[.!?\n]+", body) if len(s.strip()) > 20]
-        fallback = ". ".join(sentences[:8])
-        if len(fallback) >= 40:
-            return fallback[:600] + ".", None
-    return None, last_err
+    logger.warning("Summary generation failed after retries: %s", last_err)
+    return None, "The AI couldn't write a summary right now. Please try again."
 
 

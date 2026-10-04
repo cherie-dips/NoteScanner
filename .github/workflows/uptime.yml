@@ -1,0 +1,43 @@
+name: Uptime check
+
+# Every 15 minutes, checks that the backend answers GET /health with {"status":"ok"} within 30 s.
+# A failed run makes GitHub email the person who last changed this schedule.
+# Set the repository variable BACKEND_URL (Settings → Secrets and variables → Actions → Variables),
+# e.g. https://diptidhawade-NoteScanner.hf.space
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: true
+
+jobs:
+  health:
+    name: Check /health
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check /health
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+        run: |
+          if [ -z "$BACKEND_URL" ]; then
+            echo "::notice title=Uptime check skipped::Set the BACKEND_URL repository variable to enable it."
+            exit 0
+          fi
+          url="${BACKEND_URL%/}/health"
+          if ! body=$(curl --silent --show-error --fail --max-time 30 "$url"); then
+            echo "::error title=Backend down::$url did not answer within 30 seconds."
+            exit 1
+          fi
+          echo "$url → $body"
+          if ! python3 -c 'import json, sys; sys.exit(0 if json.loads(sys.argv[1]).get("status") == "ok" else 1)' "$body"; then
+            echo "::error title=Backend unhealthy::$url answered: $body"
+            exit 1
+          fi

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   VscNewFile,
   VscNewFolder,
@@ -8,8 +8,10 @@ import {
 } from "react-icons/vsc";
 import { BsFileEarmarkPdf } from "react-icons/bs";
 import FileUpload from "./FileUpload";
+import UploadProgress from "./UploadProgress";
+import useUploadQueue from "./useUploadQueue";
 import { API_BASE } from "../config";
-import { authFetch, getFileUrl, ensureGuestId } from "../auth";
+import { authFetch, getFileUrl, ensureGuestId, apiErrorMessage, errorText } from "../auth";
 import {
   forgetPath,
   forgetPathPrefix,
@@ -18,7 +20,6 @@ import {
 import {
   isOpfsMirrorSupported,
   isUserFolderPickerSupported,
-  hasUserDiskRootLinkedSync,
   loadStoredRootHandle,
   linkNoteScannerFolder,
   ensurePersistentStoragePermission,
@@ -30,6 +31,17 @@ import {
   mirrorMoveFolder,
 } from "../localDiskFolder";
 import { sanitizeVirtualPath } from "../virtualPath";
+import { makeDeckFromFile } from "../studyApi";
+
+const LS_AUTO_FLASHCARDS = "notescanner-auto-flashcards";
+
+function readAutoFlashcards() {
+  try {
+    return localStorage.getItem(LS_AUTO_FLASHCARDS) === "1";
+  } catch {
+    return false;
+  }
+}
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 
@@ -65,6 +77,13 @@ function FileTypeIcon({ name, size = 16 }) {
   );
 }
 
+/** Rewrite a path (or anything under it) after `from` was moved/renamed to `to`. */
+function remapPath(p, from, to) {
+  if (p === from) return to;
+  if (p && p.startsWith(`${from}/`)) return `${to}/${p.slice(from.length + 1)}`;
+  return p;
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Explorer({
@@ -72,18 +91,25 @@ export default function Explorer({
   onDeletePath,
   onMovePath,
   onTreeChange,
+  activePath = "",
+  refreshKey = 0,
+  maxUploadMb = null,
 }) {
   const [tree, setTree] = useState([]);
+  const [fileMeta, setFileMeta] = useState({});
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedIsFolder, setSelectedIsFolder] = useState(false);
-  /** 'folder' | 'file' | null */
+  /** 'folder' | 'file' | 'rename' | null */
   const [createInputMode, setCreateInputMode] = useState(null);
   const [createInputValue, setCreateInputValue] = useState("");
+  const [renameNode, setRenameNode] = useState(null);
   const [dragSource, setDragSource] = useState(null);
   const [dropTarget, setDropTarget] = useState(null);
+  const [externalDragOver, setExternalDragOver] = useState(false);
   const [newFileMenuOpen, setNewFileMenuOpen] = useState(false);
   const [ctxMenu, setCtxMenu] = useState(null);
+  const [treeError, setTreeError] = useState("");
   const fileInputRef = useRef(null);
   const createInputRef = useRef(null);
   const createRowRef = useRef(null);
@@ -100,16 +126,96 @@ export default function Explorer({
     void loadStoredRootHandle();
   }, []);
 
-  const fetchTree = async () => {
-    const res = await authFetch(`${API_BASE}/list_tree`);
-    const data = await res.json();
-    setTree(data.tree || []);
-    onTreeChange?.();
-  };
+  const fetchFileMeta = useCallback(async () => {
+    try {
+      const res = await authFetch(`${API_BASE}/file_meta`);
+      if (!res.ok) return;
+      const data = await res.json().catch(() => ({}));
+      setFileMeta(data.meta && typeof data.meta === "object" ? data.meta : {});
+    } catch {
+      /* stars are optional */
+    }
+  }, []);
+
+  const fetchTree = useCallback(async () => {
+    try {
+      const res = await authFetch(`${API_BASE}/list_tree`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(apiErrorMessage(data, res));
+      setTree(data.tree || []);
+      setTreeError("");
+      onTreeChange?.();
+      void fetchFileMeta();
+    } catch (err) {
+      setTreeError(`Couldn't load your files. ${errorText(err)}`);
+    }
+  }, [onTreeChange, fetchFileMeta]);
 
   useEffect(() => {
-    ensureGuestId().then(() => fetchTree());
-  }, []);
+    ensureGuestId()
+      .catch(() => {})
+      .then(() => fetchTree());
+  }, [fetchTree, refreshKey]);
+
+  // Finished uploads refresh the tree and, if switched on, become a flashcard deck right away.
+  const [autoFlashcards, setAutoFlashcards] = useState(readAutoFlashcards);
+  const jobDoneRef = useRef(null);
+  const onJobDone = useCallback((job, key) => jobDoneRef.current?.(job, key), []);
+  const uploads = useUploadQueue({ maxUploadMb, onJobDone });
+  const { updateItem: updateUploadItem } = uploads;
+
+  const makeFlashcards = useCallback(
+    async (key, path) => {
+      if (!path) return;
+      updateUploadItem(key, { deckStatus: "making", deckMessage: "" });
+      try {
+        const deck = await makeDeckFromFile(path);
+        updateUploadItem(key, {
+          deckStatus: "done",
+          deckMessage: `Deck ‘${deck.name}’ saved (${deck.count} cards). Review it in Study → Review.`,
+        });
+      } catch (err) {
+        updateUploadItem(key, { deckStatus: "error", deckMessage: errorText(err) });
+      }
+    },
+    [updateUploadItem],
+  );
+
+  useEffect(() => {
+    jobDoneRef.current = (job, key) => {
+      void fetchTree();
+      if (autoFlashcards && key) void makeFlashcards(key, job?.path);
+    };
+  }, [fetchTree, makeFlashcards, autoFlashcards]);
+
+  const toggleAutoFlashcards = (on) => {
+    setAutoFlashcards(on);
+    try {
+      localStorage.setItem(LS_AUTO_FLASHCARDS, on ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Follow the file opened elsewhere (e.g. a chat source): select it and open its folders.
+  useEffect(() => {
+    if (!activePath) return;
+    setSelectedItem(activePath);
+    setSelectedIsFolder(false);
+    const parts = activePath.split("/");
+    if (parts.length < 2) return;
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      for (let i = 1; i < parts.length; i++) next.add(parts.slice(0, i).join("/"));
+      return next;
+    });
+  }, [activePath]);
+
+  const closeCreateInput = () => {
+    setCreateInputMode(null);
+    setCreateInputValue("");
+    setRenameNode(null);
+  };
 
   useEffect(() => {
     if (!createInputMode) return;
@@ -117,6 +223,7 @@ export default function Explorer({
       if (createRowRef.current && !createRowRef.current.contains(e.target)) {
         setCreateInputMode(null);
         setCreateInputValue("");
+        setRenameNode(null);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -203,19 +310,70 @@ export default function Explorer({
       : "";
 
   const openCreateFolderInput = () => {
+    setRenameNode(null);
     setCreateInputValue("");
     setCreateInputMode("folder");
     setTimeout(() => createInputRef.current?.focus(), 0);
   };
 
   const openCreateFileInput = () => {
+    setRenameNode(null);
     setCreateInputValue("");
     setCreateInputMode("file");
     setTimeout(() => createInputRef.current?.focus(), 0);
   };
 
+  const openRenameInput = (node) => {
+    setCtxMenu(null);
+    setRenameNode(node);
+    setCreateInputValue(node.name);
+    setCreateInputMode("rename");
+    setTimeout(() => {
+      const input = createInputRef.current;
+      if (!input) return;
+      input.focus();
+      // Select the name without the extension, like most file managers.
+      const dot = node.type === "file" ? node.name.lastIndexOf(".") : -1;
+      input.setSelectionRange(0, dot > 0 ? dot : node.name.length);
+    }, 0);
+  };
+
   const collapseAllFolders = () => {
     setExpandedFolders(new Set());
+  };
+
+  /** After a move or rename succeeded on the server: update local copies, preview, selection, mirror. */
+  const applyPathChange = (fromPath, toPath, isFolder) => {
+    relocateLocalEntry(fromPath, toPath, isFolder);
+    onMovePath?.(fromPath, toPath, isFolder);
+    void withNotesRoot((root) =>
+      isFolder
+        ? mirrorMoveFolder(root, fromPath, toPath)
+        : mirrorMoveFile(root, fromPath, toPath),
+    );
+    setExpandedFolders((prev) => new Set([...prev].map((p) => remapPath(p, fromPath, toPath))));
+    setSelectedItem((sel) => (sel ? remapPath(sel, fromPath, toPath) : sel));
+  };
+
+  const submitRename = async (node, newName) => {
+    if (newName === node.name) return;
+    const isFolder = node.type === "folder";
+    try {
+      const formData = new FormData();
+      formData.append("path", sanitizeVirtualPath(node.path));
+      formData.append("new_name", newName);
+      const res = await authFetch(`${API_BASE}/rename_path`, { method: "POST", body: formData });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(apiErrorMessage(data, res));
+        return;
+      }
+      const toPath = sanitizeVirtualPath(data.path || "");
+      if (toPath) applyPathChange(node.path, toPath, isFolder);
+      fetchTree();
+    } catch (err) {
+      alert(`Rename failed. ${errorText(err)}`);
+    }
   };
 
   const submitCreateInput = async () => {
@@ -223,9 +381,13 @@ export default function Explorer({
     if (!name) return;
     const mode = createInputMode;
     const parentForCreate = parentPathForCreate;
+    const target = renameNode;
 
-    setCreateInputMode(null);
-    setCreateInputValue("");
+    closeCreateInput();
+    if (mode === "rename") {
+      if (target) await submitRename(target, name);
+      return;
+    }
     try {
       const formData = new FormData();
       formData.append("path", sanitizeVirtualPath(parentForCreate));
@@ -255,18 +417,26 @@ export default function Explorer({
           }
           return n;
         });
+        if (mode === "file" && data.path) {
+          // Open the new file so the user can type notes into it right away (Text view).
+          const rel = sanitizeVirtualPath(data.path);
+          setSelectedItem(rel);
+          setSelectedIsFolder(false);
+          onFileSelect?.(null, rel.split("/").pop(), rel);
+        }
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || `Failed to create ${mode === "folder" ? "folder" : "file"}.`);
+        alert(apiErrorMessage(data, res));
       }
-    } catch {
-      alert(`Failed to create ${mode === "folder" ? "folder" : "file"}.`);
+    } catch (err) {
+      alert(`Failed to create ${mode === "folder" ? "folder" : "file"}. ${errorText(err)}`);
     }
   };
 
   const handleMove = async (fromPath, toFolder) => {
     if (!fromPath || toFolder === undefined) return;
     if (toFolder === fromPath || (fromPath + "/").startsWith(toFolder + "/")) return;
+    const isFolder = !!dragSource?.isFolder;
     try {
       const formData = new FormData();
       formData.append("from_path", sanitizeVirtualPath(fromPath));
@@ -275,23 +445,14 @@ export default function Explorer({
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         const toPath = (data.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
-        if (toPath) {
-          relocateLocalEntry(fromPath, toPath, !!dragSource.isFolder);
-          onMovePath?.(fromPath, toPath, !!dragSource.isFolder);
-          const isFolder = !!dragSource.isFolder;
-          void withNotesRoot((root) =>
-            isFolder
-              ? mirrorMoveFolder(root, fromPath, toPath)
-              : mirrorMoveFile(root, fromPath, toPath),
-          );
-        }
+        if (toPath) applyPathChange(fromPath, toPath, isFolder);
         fetchTree();
       } else {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || "Move failed.");
+        alert(apiErrorMessage(data, res));
       }
-    } catch {
-      alert("Move failed.");
+    } catch (err) {
+      alert(`Move failed. ${errorText(err)}`);
     } finally {
       setDragSource(null);
       setDropTarget(null);
@@ -305,18 +466,42 @@ export default function Explorer({
     const formData = new FormData();
     formData.append("path", sanitizeVirtualPath(node.path));
     formData.append("kind", isFolder ? "folder" : "file");
-    const res = await authFetch(`${API_BASE}/delete_path`, { method: "POST", body: formData });
-    if (res.ok) {
-      if (isFolder) forgetPathPrefix(node.path);
-      else forgetPath(node.path);
-      void withNotesRoot((root) => mirrorRemove(root, node.path, isFolder));
-      onDeletePath?.(node.path, isFolder);
-      fetchTree();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      alert(data.error || "Delete failed.");
+    try {
+      const res = await authFetch(`${API_BASE}/delete_path`, { method: "POST", body: formData });
+      if (res.ok) {
+        if (isFolder) forgetPathPrefix(node.path);
+        else forgetPath(node.path);
+        void withNotesRoot((root) => mirrorRemove(root, node.path, isFolder));
+        onDeletePath?.(node.path, isFolder);
+        fetchTree();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(apiErrorMessage(data, res));
+      }
+    } catch (err) {
+      alert(`Delete failed. ${errorText(err)}`);
     }
   };
+
+  const toggleMainSource = async (node) => {
+    setCtxMenu(null);
+    const isMain = !!fileMeta[node.path]?.is_primary_authority;
+    try {
+      const formData = new FormData();
+      formData.append("path", sanitizeVirtualPath(node.path));
+      formData.append("is_primary_authority", isMain ? "false" : "true");
+      const res = await authFetch(`${API_BASE}/file_meta`, { method: "POST", body: formData });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(apiErrorMessage(data, res));
+        return;
+      }
+      setFileMeta((prev) => ({ ...prev, [node.path]: { ...(prev[node.path] || {}), ...(data.entry || {}), is_primary_authority: !isMain } }));
+    } catch (err) {
+      alert(`Couldn't update the file. ${errorText(err)}`);
+    }
+  };
+
   const canDropOn = (targetFolderPath) => {
     if (!dragSource) return false;
     if (targetFolderPath === dragSource.path) return false;
@@ -324,14 +509,20 @@ export default function Explorer({
     return true;
   };
 
+  /** Files dragged in from the desktop (not a row dragged inside the explorer). */
+  const isExternalFileDrag = (e) =>
+    !dragSource && Array.from(e.dataTransfer?.types || []).includes("Files");
+
+  const uploadPath = selectedIsFolder && selectedItem ? selectedItem : "";
+
   // ─── Recursive tree renderer ─────────────────────────────────────────────
 
-  const renderNode = (node, depth = 0, parentLines = []) => {
+  const renderNode = (node, depth = 0) => {
     const INDENT = 8; // px per depth level (matches VS Code's tight spacing)
 
     if (node.type === "folder") {
       const isExpanded = expandedFolders.has(node.path);
-      const isDropTarget = dropTarget === node.path && canDropOn(node.path);
+      const isDropTarget = dropTarget === node.path && (externalDragOver || canDropOn(node.path));
       const isSelected = selectedItem === node.path;
 
       return (
@@ -339,6 +530,7 @@ export default function Explorer({
           <div
             className={`vsc2-row${isSelected ? " vsc2-row--selected" : ""}${isDropTarget ? " vsc2-row--drop" : ""}`}
             style={{ paddingLeft: `${depth * INDENT + 4}px` }}
+            data-path={node.path}
             onClick={() => {
               setSelectedItem(node.path);
               setSelectedIsFolder(true);
@@ -352,12 +544,25 @@ export default function Explorer({
             }}
             onDragOver={(e) => {
               e.preventDefault();
+              if (isExternalFileDrag(e)) {
+                e.dataTransfer.dropEffect = "copy";
+                setDropTarget(node.path);
+                return;
+              }
               e.dataTransfer.dropEffect = "move";
               if (canDropOn(node.path)) setDropTarget(node.path);
             }}
             onDragLeave={() => setDropTarget((t) => (t === node.path ? null : t))}
             onDrop={(e) => {
               e.preventDefault();
+              if (isExternalFileDrag(e)) {
+                e.stopPropagation();
+                setExternalDragOver(false);
+                setDropTarget(null);
+                setExpandedFolders((prev) => new Set(prev).add(node.path));
+                void uploads.uploadFiles(e.dataTransfer.files, node.path);
+                return;
+              }
               if (dropTarget === node.path && dragSource) handleMove(dragSource.path, node.path);
               setDropTarget(null);
             }}
@@ -387,9 +592,7 @@ export default function Explorer({
 
           {isExpanded && (
             <div className="vsc2-children">
-              {(node.children || []).map((child) =>
-                renderNode(child, depth + 1, [...parentLines])
-              )}
+              {(node.children || []).map((child) => renderNode(child, depth + 1))}
             </div>
           )}
         </div>
@@ -398,11 +601,13 @@ export default function Explorer({
 
     // File row
     const isSelected = selectedItem === node.path;
+    const isMain = !!fileMeta[node.path]?.is_primary_authority;
     return (
       <div
         key={node.path}
         className={`vsc2-row vsc2-row--file${isSelected ? " vsc2-row--selected" : ""}`}
         style={{ paddingLeft: `${depth * INDENT + 4 + 16}px` }}  /* +16 for chevron space */
+        data-path={node.path}
         onClick={() => {
           setSelectedItem(node.path);
           setSelectedIsFolder(false);
@@ -428,12 +633,16 @@ export default function Explorer({
         <span className="vsc2-row-name-hit" onContextMenu={(e) => openContextMenu(e, node)}>
           <FileTypeIcon name={node.name} size={15} />
           <span className="vsc2-label">{node.name}</span>
+          {isMain && (
+            <span className="vsc2-main-star" title="Main source" aria-label="Main source">
+              ★
+            </span>
+          )}
         </span>
       </div>
     );
   };
 
-  const uploadPath = selectedIsFolder && selectedItem ? selectedItem : "";
   const handleLinkDiskFolder = async () => {
     try {
       const linked = await linkNoteScannerFolder();
@@ -447,8 +656,17 @@ export default function Explorer({
     }
   };
 
+  const createPlaceholder =
+    createInputMode === "rename"
+      ? `New name for ${renameNode?.name || "item"}`
+      : createInputMode === "folder"
+        ? (parentPathForCreate ? `New folder in ${parentPathForCreate}` : "New folder name…")
+        : (parentPathForCreate ? `New file in ${parentPathForCreate} (e.g. notes.txt)` : "New file name (e.g. notes.txt)");
+
+  const ctxIsMain = ctxMenu?.node?.type === "file" && !!fileMeta[ctxMenu.node.path]?.is_primary_authority;
+
   return (
-    <div className="vsc2-explorer">
+    <div className={`vsc2-explorer${externalDragOver ? " vsc2-explorer--file-drag" : ""}`}>
         {/* Header — VS Code–style title + toolbar */}
         <div className="vsc2-header">
           <span
@@ -501,8 +719,17 @@ export default function Explorer({
                       fileInputRef.current?.click();
                     }}
                   >
-                    Upload file…
+                    Upload files…
                   </button>
+                  <label className="vsc2-dropdown-item vsc2-dropdown-check">
+                    <input
+                      type="checkbox"
+                      className="upload-auto-flashcards"
+                      checked={autoFlashcards}
+                      onChange={(e) => toggleAutoFlashcards(e.target.checked)}
+                    />
+                    <span>Make flashcards automatically</span>
+                  </label>
                 </div>
               )}
             </div>
@@ -551,19 +778,13 @@ export default function Explorer({
               ref={createInputRef}
               type="text"
               className="vsc2-create-input"
-              placeholder={
-                createInputMode === "folder"
-                  ? (parentPathForCreate ? `New folder in ${parentPathForCreate}` : "New folder name…")
-                  : (parentPathForCreate ? `New file in ${parentPathForCreate} (e.g. notes.txt)` : "New file name (e.g. notes.txt)")
-              }
+              placeholder={createPlaceholder}
+              aria-label={createPlaceholder}
               value={createInputValue}
               onChange={(e) => setCreateInputValue(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") submitCreateInput();
-                if (e.key === "Escape") {
-                  setCreateInputMode(null);
-                  setCreateInputValue("");
-                }
+                if (e.key === "Escape") closeCreateInput();
               }}
             />
             <button
@@ -572,12 +793,19 @@ export default function Explorer({
               onClick={submitCreateInput}
               disabled={!createInputValue.trim()}
             >
-              OK
+              {createInputMode === "rename" ? "Rename" : "OK"}
             </button>
           </div>
         )}
 
-        <FileUpload ref={fileInputRef} path={uploadPath} onFileUploaded={fetchTree} hidden />
+        <FileUpload ref={fileInputRef} onFiles={(files) => uploads.uploadFiles(files, uploadPath)} />
+
+        <UploadProgress
+          items={uploads.items}
+          onDismiss={uploads.dismiss}
+          onClearFinished={uploads.clearFinished}
+          onMakeFlashcards={(item) => makeFlashcards(item.key, item.path)}
+        />
 
         {ctxMenu && (
           <div
@@ -585,6 +813,24 @@ export default function Explorer({
             style={{ left: ctxMenu.x, top: ctxMenu.y }}
             role="menu"
           >
+            <button
+              type="button"
+              className="vsc2-context-menu-item vsc2-context-menu-item--rename"
+              role="menuitem"
+              onClick={() => openRenameInput(ctxMenu.node)}
+            >
+              Rename…
+            </button>
+            {ctxMenu.node.type === "file" && (
+              <button
+                type="button"
+                className="vsc2-context-menu-item vsc2-context-menu-item--main-source"
+                role="menuitem"
+                onClick={() => toggleMainSource(ctxMenu.node)}
+              >
+                {ctxIsMain ? "Unmark main source" : "Mark as main source"}
+              </button>
+            )}
             <button
               type="button"
               className="vsc2-context-menu-item"
@@ -604,7 +850,28 @@ export default function Explorer({
           </div>
         )}
 
-        <div className="vsc2-tree" onMouseDown={handleTreeMouseDown}>
+        <div
+          className="vsc2-tree"
+          onMouseDown={handleTreeMouseDown}
+          onDragOver={(e) => {
+            if (!isExternalFileDrag(e)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            if (!externalDragOver) setExternalDragOver(true);
+          }}
+          onDragLeave={(e) => {
+            if (e.currentTarget.contains(e.relatedTarget)) return;
+            setExternalDragOver(false);
+            setDropTarget(null);
+          }}
+          onDrop={(e) => {
+            if (!isExternalFileDrag(e)) return;
+            e.preventDefault();
+            setExternalDragOver(false);
+            setDropTarget(null);
+            void uploads.uploadFiles(e.dataTransfer.files, uploadPath);
+          }}
+        >
           {dragSource && (
             <div
               className={`vsc2-root-drop${dropTarget === "" ? " vsc2-row--drop" : ""}`}
@@ -616,8 +883,25 @@ export default function Explorer({
             </div>
           )}
 
-          {tree.length === 0 ? (
-            <div className="vsc2-empty">No files yet. Use New File or New Folder (click the title above to target the root).</div>
+          {externalDragOver && (
+            <div className="vsc2-drop-hint">
+              Drop files on a folder, or anywhere here to upload to{" "}
+              {uploadPath ? `“${uploadPath}”` : "the top level"}.
+            </div>
+          )}
+
+          {treeError ? (
+            <div className="vsc2-empty vsc2-error" role="alert">
+              {treeError}{" "}
+              <button type="button" className="vsc2-retry" onClick={() => fetchTree()}>
+                Retry
+              </button>
+            </div>
+          ) : tree.length === 0 ? (
+            <div className="vsc2-empty">
+              No files yet. Use New File or New Folder (click the title above to target the root),
+              or drag files here to upload them.
+            </div>
           ) : (
             tree.map((node) => renderNode(node, 0))
           )}

@@ -1,0 +1,89 @@
+name: Weekly backup
+
+# Backs up the Chroma Cloud database every week. The backup holds password hashes and students'
+# notes, so it's encrypted with BACKUP_PASSPHRASE before being stored as a workflow artifact
+# (artifacts of a public repository can be downloaded by others). Decrypt and restore as described
+# in DEPLOYMENT.md ("Backups and restore").
+
+on:
+  schedule:
+    - cron: "30 21 * * 6" # Saturdays 21:30 UTC = Sundays 03:00 in India
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Back up Chroma
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check secrets
+        id: check
+        env:
+          CHROMA_API_KEY: ${{ secrets.CHROMA_API_KEY }}
+          CHROMA_TENANT: ${{ secrets.CHROMA_TENANT }}
+          CHROMA_DATABASE: ${{ secrets.CHROMA_DATABASE }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          missing=""
+          for name in CHROMA_API_KEY CHROMA_TENANT CHROMA_DATABASE BACKUP_PASSPHRASE; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::notice title=Backup skipped::Add these repository secrets to enable weekly backups:$missing"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.check.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        if: steps.check.outputs.run == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backup dependencies
+        if: steps.check.outputs.run == 'true'
+        # Only what the backup needs: scripts/backup_chroma.py imports backend/chroma_store.py,
+        # which uses chromadb (no AI models or web framework).
+        run: |
+          python -m pip install --upgrade pip
+          pip install chromadb==1.0.21 python-dotenv==1.1.1
+
+      - name: Back up
+        if: steps.check.outputs.run == 'true'
+        env:
+          CHROMA_API_KEY: ${{ secrets.CHROMA_API_KEY }}
+          CHROMA_TENANT: ${{ secrets.CHROMA_TENANT }}
+          CHROMA_DATABASE: ${{ secrets.CHROMA_DATABASE }}
+        run: python scripts/backup_chroma.py --out backup.jsonl.gz
+
+      - name: Encrypt
+        if: steps.check.outputs.run == 'true'
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          name="notescanner-backup-$(date -u +%Y%m%dT%H%M%SZ).jsonl.gz.gpg"
+          printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 --output "$name" backup.jsonl.gz
+          shred -u backup.jsonl.gz 2>/dev/null || rm -f backup.jsonl.gz
+          ls -l "$name"
+
+      - name: Upload encrypted backup
+        if: steps.check.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: notescanner-backup-${{ github.run_id }}
+          path: notescanner-backup-*.jsonl.gz.gpg
+          retention-days: 90
+          if-no-files-found: error

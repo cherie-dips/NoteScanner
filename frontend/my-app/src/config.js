@@ -12,3 +12,24 @@ function getDefaultApiBase() {
 }
 // Use getter so that when bundle runs in browser (e.g. localhost), we get the right default
 export const API_BASE = typeof window !== "undefined" ? getDefaultApiBase() : (import.meta.env.VITE_API_URL || "");
+
+/** Server feature flags (GET /config). Every flag is off if the request fails. */
+export const DEFAULT_SERVER_CONFIG = {
+  password_reset_enabled: false,
+  onenote_configured: false,
+  max_upload_mb: null,
+  max_chat_files: null,
+  reminders_available: false,
+  languages: [],
+};
+
+export async function loadServerConfig() {
+  try {
+    const res = await fetch(`${API_BASE}/config`);
+    if (!res.ok) return DEFAULT_SERVER_CONFIG;
+    const data = await res.json();
+    return { ...DEFAULT_SERVER_CONFIG, ...(data && typeof data === "object" ? data : {}) };
+  } catch {
+    return DEFAULT_SERVER_CONFIG;
+  }
+}

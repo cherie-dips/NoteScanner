@@ -8,15 +8,17 @@ __pycache__/
 venv/
 .venv/
 
+# Test caches
+.pytest_cache/
+
 # ChromaDB (legacy local storage; app uses Docker Chroma server)
 chroma_storage/
 
 # User data
 user_notes/
 
-# Node
+# Node (package-lock.json is committed so installs are reproducible)
 node_modules/
-package-lock.json
 
 # System/Editor
 .DS_Store
@@ -46,3 +48,5 @@ runs/
 output/
 checkpoints/
 *.tensorboard/
+# Answer-quality test runs (copy one to evals/ to keep it as a baseline)
+evals/results/

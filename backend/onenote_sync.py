@@ -15,7 +15,7 @@ import httpx
 from backend.chroma_store import onenote_token_get, onenote_token_upsert
 from backend.chroma_store import user_document_upsert
 from backend.ingest_api import ingest_text_for_path
-from backend.chroma_store import vfs_get_tree, vfs_set_tree
+from backend.chroma_store import user_lock, vfs_get_tree, vfs_set_tree
 from backend.vfs_tree import tree_add_folder, tree_add_file
 
 GRAPH_AUTHORIZE_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
@@ -192,7 +192,7 @@ def _page_to_rel_path(page: dict) -> tuple[str, str]:
 def sync_onenote_pages_to_ingest(user_id: str, max_pages: int = 25) -> dict:
     access_token, _ = ensure_user_access_token(user_id)
     pages = _list_onenote_pages(access_token, max_pages=max_pages)
-    tree = vfs_get_tree(user_id)
+    added: list[tuple[str, str]] = []
     ingested = 0
     skipped = 0
     errors: list[str] = []
@@ -213,20 +213,26 @@ def sync_onenote_pages_to_ingest(user_id: str, max_pages: int = 25) -> dict:
                 continue
             folder = rel_path.rsplit("/", 1)[0]
             file_name = rel_path.rsplit("/", 1)[-1]
-            tree = tree_add_folder(tree, "", folder)
-            tree = tree_add_file(tree, folder, file_name)
             try:
                 user_document_upsert(user_id, rel_path, text, source_title)
             except Exception:
                 # user_documents is a cache; ingest chunks are the primary retrieval source.
                 pass
             ingest_text_for_path(user_id, rel_path, source_title, text)
+            added.append((folder, file_name))
             ingested += 1
         except Exception as e:
             errors.append(str(e))
             continue
 
-    vfs_set_tree(user_id, tree)
+    if added:
+        # Re-read under the lock so uploads made during the sync aren't overwritten.
+        with user_lock(user_id):
+            tree = vfs_get_tree(user_id)
+            for folder, file_name in added:
+                tree = tree_add_folder(tree, "", folder)
+                tree = tree_add_file(tree, folder, file_name)
+            vfs_set_tree(user_id, tree)
     return {
         "pages_seen": len(pages),
         "pages_ingested": ingested,

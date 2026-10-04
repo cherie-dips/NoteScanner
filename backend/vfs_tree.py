@@ -144,6 +144,7 @@ def tree_move_path(tree: list, from_path: str, to_folder: str, new_name: str | N
         return n
 
     rebased = rebase(removed)
+    rebased["name"] = nm
     children = ensure_folder_chain(t, dest_parent)
     children.append(rebased)
     return t

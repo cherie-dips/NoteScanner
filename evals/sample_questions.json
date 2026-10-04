@@ -1,0 +1,63 @@
+[
+  {
+    "id": "first-law",
+    "question": "What does Newton's first law say?",
+    "must_include": ["rest", "straight line", "force"],
+    "expected_source": "Newton's laws of motion"
+  },
+  {
+    "id": "inertia",
+    "question": "According to my notes, what does mass measure?",
+    "must_include": ["inertia"],
+    "expected_source": "Newton's laws of motion"
+  },
+  {
+    "id": "second-law-formula",
+    "question": "What is the formula for Newton's second law?",
+    "must_include": ["F = ma", "mass", "acceleration"],
+    "expected_source": "Newton's laws of motion"
+  },
+  {
+    "id": "unit-of-force",
+    "question": "What is the unit of force and how is it defined in base units?",
+    "must_include": ["newton", "kg"],
+    "expected_source": "Newton's laws of motion"
+  },
+  {
+    "id": "third-law",
+    "question": "Explain Newton's third law.",
+    "must_include": ["equal", "opposite"],
+    "expected_source": "Newton's laws of motion"
+  },
+  {
+    "id": "momentum-definition",
+    "question": "How is momentum defined?",
+    "must_include": ["mass", "velocity", "p = mv"],
+    "expected_source": "Newton's laws of motion"
+  },
+  {
+    "id": "second-law-momentum",
+    "question": "How can Newton's second law be written in terms of momentum?",
+    "must_include": ["dp", "dt"],
+    "expected_source": "Newton's laws of motion",
+    "opened_file": "Getting started/Sample - Newton's laws of motion.md"
+  },
+  {
+    "id": "momentum-conservation",
+    "question": "When is total momentum conserved?",
+    "must_include": ["conserved", "external force"],
+    "expected_source": "Newton's laws of motion"
+  },
+  {
+    "id": "worked-example",
+    "question": "A 2 kg cart accelerates at 3 m/s². What is the net force on it?",
+    "must_include": [["6 N", "6 newton"]],
+    "expected_source": "Newton's laws of motion"
+  },
+  {
+    "id": "fix-reading-mistakes",
+    "question": "A scanned page in my notes was read wrongly. How do I fix it in NoteScanner?",
+    "must_include": ["Text view"],
+    "expected_source": "Welcome to NoteScanner"
+  }
+]

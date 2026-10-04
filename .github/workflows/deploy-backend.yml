@@ -1,0 +1,70 @@
+name: Deploy backend to Hugging Face
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_SPACE: diptidhawade/NoteScanner
+    steps:
+      - name: Check for HF_TOKEN
+        id: token
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "::notice title=Backend deploy skipped::Add a Hugging Face write token as the HF_TOKEN repository secret to deploy the backend automatically."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v4
+
+      - name: Push backend to the Space
+        if: steps.token.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" space
+
+          # Replace the Space's files with what the backend image needs.
+          # Keep the Space's own .git and .gitattributes. No binary files are copied (Spaces reject them).
+          find space -mindepth 1 -maxdepth 1 ! -name .git ! -name .gitattributes -exec rm -rf {} +
+          cp -r backend Dockerfile .dockerignore requirements.txt DEPLOYMENT.md space/
+          find space/backend -name '__pycache__' -prune -exec rm -rf {} +
+
+          # Spaces read their settings from YAML front matter at the top of README.md.
+          # The GitHub README has none, so add it here.
+          {
+            printf '%s\n' '---' 'title: NoteScanner' 'emoji: "📚"' 'colorFrom: indigo' 'colorTo: blue' \
+              'sdk: docker' 'app_port: 7860' 'pinned: false' '---' ''
+            if [ "$(head -n 1 README.md)" = "---" ]; then
+              # README already has front matter: drop it so the settings above are used.
+              awk 'NR == 1 && /^---$/ { fm = 1; next } fm && /^---$/ { fm = 0; next } !fm' README.md
+            else
+              cat README.md
+            fi
+          } > space/README.md
+
+          cd space
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Space is already up to date."
+            exit 0
+          fi
+          git commit -m "Deploy ${GITHUB_SHA::7} from GitHub"
+          git push origin HEAD:main
