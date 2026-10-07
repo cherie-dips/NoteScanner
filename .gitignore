@@ -50,3 +50,6 @@ checkpoints/
 *.tensorboard/
 # Answer-quality test runs (copy one to evals/ to keep it as a baseline)
 evals/results/
+
+# Private planning notes
+ROADMAP.md

@@ -1,4 +1,4 @@
-"""Roadmap steps 0–2: consent, starter notes, usage/cost/budget, alerts, feedback/admin, preferences,
+"""Pilot features: consent, starter notes, usage/cost/budget, alerts, feedback/admin, preferences,
 reminders, Today dashboard, exam mode, page numbers."""
 import datetime as dt
 import json

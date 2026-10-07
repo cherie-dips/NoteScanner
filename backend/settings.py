@@ -85,7 +85,7 @@ def _env_bool(name: str, default: bool) -> bool:
     return _env_str(name, "true" if default else "false").lower() in ("1", "true", "yes", "on")
 
 
-# ---------- Running a pilot (ROADMAP.md steps 0–2) ----------
+# ---------- Running a pilot ----------
 APP_TIMEZONE = _env_str("APP_TIMEZONE", "Asia/Kolkata")  # "today", streaks and reminder times use this
 STARTER_NOTES = _env_bool("STARTER_NOTES", True)          # new accounts get a "Getting started" folder
 PRIVACY_VERSION = "2026-10"                               # bump when the privacy note changes
