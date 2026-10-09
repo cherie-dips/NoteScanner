@@ -269,6 +269,19 @@ def test_sarvam_zip_page_texts(tmp_path):
     assert llm_pipeline._page_texts_from_output_zip(str(zpath)) == ["First page more", "Second page text"]
 
 
+def test_sarvam_figures_are_not_kept_as_text(tmp_path):
+    image = "![Image](data:image/jpeg;base64," + "QUJD" * 5000 + ")"
+    zpath = tmp_path / "out.zip"
+    with zipfile.ZipFile(zpath, "w") as z:
+        z.writestr("document.md", f"TCP handshake\n\n{image}\n\nSYN, SYN-ACK, ACK")
+        z.writestr("metadata/page_001.json", json.dumps({"blocks": [{"text": f"TCP handshake {image}"}]}))
+    md = llm_pipeline._extract_markdown_from_output_zip(str(zpath))
+    assert md == "TCP handshake\n\n[figure]\n\nSYN, SYN-ACK, ACK"
+    assert llm_pipeline._page_texts_from_output_zip(str(zpath)) == ["TCP handshake [figure]"]
+    html = 'x <img alt="a" src="data:image/png;base64,QUJD"> y'
+    assert llm_pipeline.strip_inline_images(html) == "x [figure] y"
+
+
 def test_delete_account_removes_usage_and_feedback(client, user):
     h, uid = user["headers"], user["user_id"]
     client.post("/feedback", data={"kind": "general", "comment": "hi"}, headers=h)

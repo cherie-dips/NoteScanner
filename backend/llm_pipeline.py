@@ -145,6 +145,21 @@ def _prepare_document_for_document_intel(file_bytes: bytes, mime: str) -> tuple[
     return _prepare_image_for_document_intel(file_bytes, m or "image/jpeg")
 
 
+# Sarvam's markdown embeds every figure it finds as a base64 image: often hundreds of KB per page,
+# which would flood search with junk passages. Keep a short marker instead.
+_INLINE_IMAGE_RES = (
+    re.compile(r"!\[[^\]]*\]\(\s*data:[^)]*\)"),
+    re.compile(r"<img\b[^>]*\bsrc\s*=\s*[\"']data:[^\"']*[\"'][^>]*>", re.IGNORECASE),
+    re.compile(r"data:image/[\w.+-]+;base64,[A-Za-z0-9+/=\s]{64,}"),
+)
+
+
+def strip_inline_images(text: str) -> str:
+    for pattern in _INLINE_IMAGE_RES:
+        text = pattern.sub("[figure]", text or "")
+    return text
+
+
 def _extract_markdown_from_output_zip(zip_path: str) -> str:
     with zipfile.ZipFile(zip_path, "r") as z:
         names = sorted(z.namelist())
@@ -155,7 +170,7 @@ def _extract_markdown_from_output_zip(zip_path: str) -> str:
         )
         if not pick:
             return ""
-        return z.read(pick).decode("utf-8", errors="replace").strip()
+        return strip_inline_images(z.read(pick).decode("utf-8", errors="replace")).strip()
 
 
 def _strings_in(value) -> list[str]:
@@ -188,7 +203,7 @@ def _page_texts_from_output_zip(zip_path: str) -> list[str]:
                     data = json.loads(z.read(name).decode("utf-8", errors="replace"))
                 except json.JSONDecodeError:
                     continue
-                pages.append((int(m.group(1)), " ".join(_strings_in(data))))
+                pages.append((int(m.group(1)), strip_inline_images(" ".join(_strings_in(data)))))
     except zipfile.BadZipFile:
         return []
     return [text for _, text in sorted(pages)]
