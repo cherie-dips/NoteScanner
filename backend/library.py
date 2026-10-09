@@ -52,6 +52,8 @@ MAX_FILE_BYTES = 200 * 1024 * 1024
 TILE_RATIO = 1.35      # height / width of one piece sent to OCR: about a portrait page
 OCR_WIDTH_PX = 1600    # render width for OCR: handwriting stays legible, images stay small
 STATUS_CACHE_SECONDS = 60
+SARVAM_RETRY_DELAYS = (5, 15)  # seconds before retrying a failed Sarvam job (e.g. an upload timeout)
+TESSERACT_FALLBACK = "sarvam_failed_used_tesseract"
 NOT_READY = "These course notes aren't ready for AI yet. Please try again later."
 
 FOLDER_NAMES = {
@@ -352,8 +354,13 @@ def _ocr(tiles: list[Tile], mode: str, result: PdfText) -> list[str]:
         batch = tiles[i : i + OCR_BATCH]
         _check_budget()
         got = _sarvam_batch(batch)
+        for delay in SARVAM_RETRY_DELAYS:  # failures are mostly network hiccups: try again first
+            if got is not None:
+                break
+            time.sleep(delay)
+            got = _sarvam_batch(batch)
         if got is None:
-            result.notes.append("sarvam_failed_used_tesseract")
+            result.notes.append(TESSERACT_FALLBACK)
             got = [_tesseract(t) for t in batch]
         else:
             result.sarvam_pieces += len(batch)
@@ -651,6 +658,11 @@ def sync(
     finally:
         _state.update(running=False, current=None, finished_at=time.time())
         _sync_lock.release()
+
+
+def tesseract_fallbacks() -> list[str]:
+    """PDFs where Sarvam failed and Tesseract was used instead (worth reading again)."""
+    return sorted(p for p, m in indexed_files().items() if TESSERACT_FALLBACK in (m.get("note") or ""))
 
 
 def _sync_quietly(**kwargs) -> None:

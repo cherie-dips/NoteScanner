@@ -237,6 +237,34 @@ def test_sarvam_reads_at_most_ten_pieces_per_job(bucket, monkeypatch):
     assert rec and rec[0]["pages_read"] == 12
 
 
+def test_sarvam_failure_is_retried_before_falling_back(bucket, monkeypatch):
+    calls = []
+
+    def flaky_sarvam(pdf_bytes):
+        calls.append(1)
+        if len(calls) == 1:
+            return None, "The write operation timed out", []
+        return "Recursion trees for divide and conquer", None, ["Recursion trees for divide and conquer"]
+
+    monkeypatch.setattr(settings, "LIBRARY_OCR", "sarvam")
+    monkeypatch.setattr(library, "SARVAM_RETRY_DELAYS", (0, 0))
+    monkeypatch.setattr(llm_pipeline, "transcribe_pdf_with_pages", flaky_sarvam)
+    monkeypatch.setattr(library, "_tesseract", lambda tile: pytest.fail("a retry should have worked"))
+    bucket.put(L1, handwritten_pdf())
+    assert library.sync()["sarvam_pieces"] == 1 and len(calls) == 2
+    assert library.tesseract_fallbacks() == []
+
+
+def test_lasting_sarvam_failure_falls_back_and_is_listed(bucket, monkeypatch):
+    monkeypatch.setattr(settings, "LIBRARY_OCR", "sarvam")
+    monkeypatch.setattr(library, "SARVAM_RETRY_DELAYS", (0, 0))
+    monkeypatch.setattr(llm_pipeline, "transcribe_pdf_with_pages", lambda b: (None, "down", []))
+    monkeypatch.setattr(library, "_tesseract", lambda tile: "weaker text about recursion")
+    bucket.put(L1, handwritten_pdf())
+    library.sync()
+    assert library.tesseract_fallbacks() == [L1]
+
+
 def test_dry_run_counts_ocr_pieces_and_changes_nothing(bucket, monkeypatch):
     monkeypatch.setattr(library, "_tesseract", lambda tile: pytest.fail("dry run must not read"))
     bucket.put(L1, handwritten_pdf(pages=3))

@@ -5,6 +5,7 @@ Index the shared course library: the course PDFs behind SDE-Prep's Notes tab (se
     python scripts/index_library.py               # read and index new or changed PDFs
     python scripts/index_library.py --only plaksha-university/discrete-maths --limit 3
     python scripts/index_library.py --force       # re-read every PDF, even unchanged ones
+    python scripts/index_library.py --redo-tesseract   # re-read PDFs where Sarvam failed and Tesseract was used
 
 Each PDF is read once and shared by every student. Unchanged PDFs (same eTag) are skipped, so
 running it again only reads what's new. Handwritten and scanned pages are read with Sarvam Vision
@@ -33,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--only", action="append", default=[], metavar="PREFIX", help="only paths starting with this (repeatable)")
     parser.add_argument("--limit", type=int, default=None, help="read at most this many PDFs")
     parser.add_argument("--force", action="store_true", help="re-read PDFs even when unchanged")
+    parser.add_argument("--redo-tesseract", action="store_true", help="re-read PDFs that fell back to Tesseract")
     args = parser.parse_args(argv)
 
     from dotenv import load_dotenv
@@ -45,6 +47,12 @@ def main(argv: list[str] | None = None) -> int:
         print("LIBRARY_ENABLED is off; nothing to do.")
         return 1
     started = time.time()
+    if args.redo_tesseract:
+        args.only = library.tesseract_fallbacks()
+        args.force = True
+        print(f"{len(args.only)} PDF(s) fell back to Tesseract: {args.only}")
+        if not args.only:
+            return 0
     summary = library.sync(dry_run=args.dry_run, only=args.only, limit=args.limit, force=args.force, log=print)
     print(json.dumps(summary, indent=2))
     if summary["ocr"] == "sarvam":
