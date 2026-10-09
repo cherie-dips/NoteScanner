@@ -215,7 +215,8 @@ class Tile:
 @dataclass
 class PdfText:
     text: str = ""
-    anchors: list[tuple[int, int, float]] = field(default_factory=list)  # (offset in text, page, y)
+    # Where each piece starts in `text`: (offset, page, y0, y1) - it covers y0..y1 of that page.
+    anchors: list[tuple[int, int, float, float]] = field(default_factory=list)
     pages: int = 0
     ocr_pieces: int = 0     # pieces that needed OCR
     sarvam_pieces: int = 0  # pieces Sarvam read (paid)
@@ -405,11 +406,13 @@ def read_pdf(data: bytes, ocr: str = "tesseract", estimate_only: bool = False) -
     pieces.sort(key=lambda p: (p[0], p[1]))
     parts: list[str] = []
     offset = 0
-    for number, y, text in pieces:
+    for k, (number, y, text) in enumerate(pieces):
         if parts:
             parts.append("\n\n")
             offset += 2
-        result.anchors.append((offset, number, y))
+        nxt = pieces[k + 1] if k + 1 < len(pieces) else None
+        y1 = nxt[1] if nxt and nxt[0] == number and nxt[1] > y else 1.0
+        result.anchors.append((offset, number, y, y1))
         parts.append(text)
         offset += len(text)
     result.text = "".join(parts)
@@ -418,7 +421,13 @@ def read_pdf(data: bytes, ocr: str = "tesseract", estimate_only: bool = False) -
 
 
 # ---------- Storing ----------
-def _chunks_with_positions(text: str, anchors: list[tuple[int, int, float]]) -> list[tuple[str, int | None, float | None]]:
+def _chunks_with_positions(
+    text: str, anchors: list[tuple[int, int, float, float]]
+) -> list[tuple[str, int | None, float | None]]:
+    """
+    Passages with the page and spot (0..1) each one starts at. Inside a piece the spot is estimated
+    from how far into the piece's text the passage starts (writing runs top to bottom).
+    """
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 
     from backend.ingest_api import CHUNK_OVERLAP, CHUNK_SIZE
@@ -431,8 +440,11 @@ def _chunks_with_positions(text: str, anchors: list[tuple[int, int, float]]) -> 
             out.append((d.page_content, None, None))
             continue
         start = max(int(d.metadata.get("start_index") or 0), 0)
-        _, page, y = anchors[max(bisect.bisect_right(offsets, start) - 1, 0)]
-        out.append((d.page_content, page, y))
+        i = max(bisect.bisect_right(offsets, start) - 1, 0)
+        piece_start, page, y0, y1 = anchors[i]
+        piece_end = offsets[i + 1] if i + 1 < len(offsets) else len(text)
+        share = min(max((start - piece_start) / max(piece_end - piece_start, 1), 0.0), 1.0)
+        out.append((d.page_content, page, y0 + share * (y1 - y0)))
     return out
 
 

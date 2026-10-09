@@ -187,8 +187,18 @@ def test_handwritten_page_is_cut_into_pieces_and_read_with_ocr(monkeypatch):
     pdf = library.read_pdf(handwritten_pdf(height=1700), ocr="tesseract")
     assert pdf.ocr_pieces == len(seen) == 2 and pdf.method == "ocr"
     assert seen[0] == (1, 0.0) and 0.3 < seen[1][1] < 0.7
-    assert [(page, round(y, 2)) for _, page, y in pdf.anchors] == seen
+    assert [(page, round(y0, 2)) for _, page, y0, _ in pdf.anchors] == seen
+    assert pdf.anchors[0][3] == pytest.approx(seen[1][1], abs=0.01) and pdf.anchors[1][3] == 1.0
     assert pdf.text.startswith("handwritten piece 1")
+
+
+def test_passage_spot_is_estimated_inside_a_piece():
+    text = "A" * 1000 + "\n\n" + "B" * 1000  # piece 1 covers 0..0.5 of the page, piece 2 0.5..1
+    anchors = [(0, 1, 0.0, 0.5), (1002, 1, 0.5, 1.0)]
+    spots = [(page, round(y, 2)) for _, page, y in library._chunks_with_positions(text, anchors)]
+    assert spots[0] == (1, 0.0) and spots[-1][1] > 0.5
+    assert all(a[1] <= b[1] for a, b in zip(spots, spots[1:]))  # top to bottom
+    assert any(0.0 < y < 0.5 for _, y in spots)  # a passage starting mid-piece isn't pinned to its top
 
 
 def test_cuts_fall_on_blank_rows():
