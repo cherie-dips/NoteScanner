@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import Markdown from "./Markdown";
 import { API_BASE } from "../config";
 import { apiRequest, authFetch, apiErrorMessage, downloadBlob, errorText } from "../auth";
+import { onShown } from "../embed";
 import { shuffled } from "../studyUtils";
 
 const GRADES = [
@@ -62,6 +63,8 @@ export default function StudyDecks({ refreshKey = 0 }) {
   useEffect(() => {
     void loadDecks();
   }, [loadDecks, refreshKey]);
+
+  useEffect(() => onShown(() => void loadDecks()), [loadDecks]);
 
   const backToList = () => {
     setMode("list");

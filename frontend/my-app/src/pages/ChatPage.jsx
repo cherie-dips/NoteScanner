@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { LuMic } from "react-icons/lu";
+import { EMBEDDED } from "../embed";
 import "../index.css";
 
 /** Signed-out landing page. Uploading and asking questions use paid AI services, so they need an account. */
@@ -53,14 +54,21 @@ export default function ChatPage({ onSignInClick, onShowPrivacy }) {
   return (
     <div className="chat-page">
       <header className="chat-page-header">
-        <div className="chat-page-brand">NoteScanner</div>
+        {/* Inside SDE-Prep the site header already names the page. */}
+        <div className="chat-page-brand">{EMBEDDED ? "" : "NoteScanner"}</div>
         <button type="button" className="auth-btn chat-page-signin" onClick={onSignInClick}>
           Sign in
         </button>
       </header>
 
       <main className="chat-page-main">
-        <h1 className="chat-page-title">Where should we begin?</h1>
+        <h1 className="chat-page-title">{EMBEDDED ? "Study from your own notes" : "Where should we begin?"}</h1>
+        {EMBEDDED && (
+          <p className="chat-page-lede">
+            Upload class notes, handouts or photos of handwritten pages. Ask questions about them and turn
+            them into flashcards and quizzes. The same account works for Ask AI in Notes.
+          </p>
+        )}
 
         <form className="chat-page-form" onSubmit={handleSubmit}>
           <div className="chat-page-input-wrap">

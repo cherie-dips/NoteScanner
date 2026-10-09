@@ -41,6 +41,17 @@ def test_starter_notes_answer_a_first_question(client, user, monkeypatch):
     assert "Newton's laws of motion" in j["answer"]
 
 
+def test_starter_notes_use_the_name_the_student_signed_up_under(client, user, signup):
+    starter_notes.add_starter_notes(user["user_id"], "Study AI")
+    welcome = f"{starter_notes.STARTER_FOLDER}/Welcome to Study AI.md"
+    assert welcome in tree_paths(client, user["headers"])
+    text = client.get("/file_text", params={"path": welcome}, headers=user["headers"]).json()["text"]
+    assert text.startswith("# Welcome to Study AI") and "NoteScanner" not in text
+    other = signup()
+    starter_notes.add_starter_notes(other["user_id"], "Something else")  # only known names are used
+    assert f"{starter_notes.STARTER_FOLDER}/Welcome to NoteScanner.md" in tree_paths(client, other["headers"])
+
+
 def test_usage_is_counted(client, user, upload, monkeypatch):
     h, uid = user["headers"], user["user_id"]
     monkeypatch.setattr(llm_pipeline, "_sarvam_chat_complete", lambda *a, **k: (llm_pipeline._add_usage(120, 30), ("Answer.", None))[1])

@@ -11,6 +11,7 @@ import FileUpload from "./FileUpload";
 import UploadProgress from "./UploadProgress";
 import useUploadQueue from "./useUploadQueue";
 import { API_BASE } from "../config";
+import { EMBEDDED } from "../embed";
 import { authFetch, getFileUrl, ensureGuestId, apiErrorMessage, errorText } from "../auth";
 import {
   forgetPath,
@@ -651,7 +652,7 @@ export default function Explorer({
       }
     } catch (e) {
       if (e?.name !== "AbortError") {
-        alert(e?.message || "Could not link your NoteScanner folder.");
+        alert(e?.message || "Could not link the folder.");
       }
     }
   };
@@ -682,7 +683,7 @@ export default function Explorer({
             tabIndex={0}
             title="Clear selection — new folder/file goes to workspace root"
           >
-            NOTESCANNER
+            {EMBEDDED ? "MY NOTES" : "NOTESCANNER"}
           </span>
           <div className="vsc2-header-actions">
             <div className="vsc2-header-menu-wrap" ref={newFileMenuWrapRef}>
@@ -746,8 +747,8 @@ export default function Explorer({
               type="button"
               className="vsc2-header-btn"
               onClick={handleLinkDiskFolder}
-              title="Link NoteScanner folder on disk"
-              aria-label="Link NoteScanner folder on disk"
+              title={EMBEDDED ? "Link a folder on disk" : "Link NoteScanner folder on disk"}
+              aria-label={EMBEDDED ? "Link a folder on disk" : "Link NoteScanner folder on disk"}
             >
               <VscFolderOpened size={16} />
             </button>

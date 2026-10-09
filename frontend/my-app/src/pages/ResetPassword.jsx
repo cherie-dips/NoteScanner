@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { API_BASE } from "../config";
 import { apiErrorMessage, errorText } from "../auth";
+import { APP_NAME } from "../embed";
 import "../index.css";
 
 const MIN_PASSWORD = 8;
@@ -46,7 +47,7 @@ export default function ResetPassword({ token, onDone, onClose }) {
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1 className="auth-title">NoteScanner</h1>
+        <h1 className="auth-title">{APP_NAME}</h1>
         <p className="auth-subtitle">Set a new password</p>
         <form onSubmit={handleSubmit} className="auth-form auth-reset-form">
           <input

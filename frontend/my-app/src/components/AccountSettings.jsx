@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiRequest, errorText } from "../auth";
+import { APP_NAME } from "../embed";
 
 const MIN_PASSWORD = 8;
 const MAX_PASSWORD = 72;
@@ -230,7 +231,7 @@ export default function AccountSettings({ onClose, onNotesDeleted, onAccountDele
         <section className="settings-section settings-section--danger">
           <h3 className="settings-heading">Delete all my notes</h3>
           <p className="settings-text">
-            Removes every folder, file, and extracted text from NoteScanner. Original files saved on this
+            Removes every folder, file, and extracted text from {APP_NAME}. Original files saved on this
             computer are not touched. Type <strong>DELETE</strong> to confirm.
           </p>
           <form className="auth-form account-delete-notes" onSubmit={deleteAllNotes}>

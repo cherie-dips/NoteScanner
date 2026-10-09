@@ -7,7 +7,7 @@ import time
 from fastapi import APIRouter, Form
 from fastapi.responses import JSONResponse, Response
 
-from backend import alerts, llm_pipeline, preferences, rate_limit, study_store, usage
+from backend import alerts, library, llm_pipeline, preferences, rate_limit, study_store, usage
 from backend.chroma_store import user_document_get_content, user_notes_concat_text_for_path
 from backend.deps import SignedInUser
 from backend.paths import file_paths, get_vfs_tree_clean, strip_storage_path
@@ -33,8 +33,12 @@ def _build_study_scope_context(
     course_path: str,
     focus_query: str,
     include_course_context: bool,
+    library_path: str = "",
 ) -> tuple[str | None, str | None]:
     """Return context strictly from opened file and optionally same course folder."""
+    if (library_path or "").strip():
+        focus = (focus_query or "").strip() or "key ideas for exam"
+        return library.study_context(library_path, focus, include_course_context)
     open_rel = strip_storage_path(opened_file_path or "")
     if not open_rel:
         return None, "Open a file first. Study generation uses the active file context."
@@ -117,12 +121,15 @@ def study_generate(
     opened_file_path: str = Form(""),
     course_path: str = Form(""),
     include_course_context: bool = Form(True),
+    library_path: str = Form(""),
     user_id: SignedInUser = None,
 ):
     if task not in ("flashcards", "mcq"):
         return JSONResponse({"error": "task must be 'flashcards' or 'mcq'."}, status_code=400)
     _limit_study(user_id)
-    ctx, cerr = _build_study_scope_context(user_id, opened_file_path, course_path, focus_query, include_course_context)
+    ctx, cerr = _build_study_scope_context(
+        user_id, opened_file_path, course_path, focus_query, include_course_context, library_path
+    )
     if cerr:
         return JSONResponse({"error": cerr}, status_code=400)
     data, err = _run_study_ai(user_id, llm_pipeline.cheap_study_json, ctx, task, max(1, min(count, 30)))
@@ -132,16 +139,29 @@ def study_generate(
         {
             "task": task,
             "items": data,
-            "grounded_on_path": strip_storage_path(opened_file_path or ""),
+            "grounded_on_path": _grounded_on(opened_file_path, library_path),
             "context_chars": len(ctx or ""),
         }
     )
 
 
-def _summary(user_id: str, focus_query: str, opened_file_path: str, course_path: str, include_course_context: bool):
+def _grounded_on(opened_file_path: str, library_path: str) -> str:
+    return library.scope_of(library_path)[0] or strip_storage_path(opened_file_path or "")
+
+
+def _summary(
+    user_id: str,
+    focus_query: str,
+    opened_file_path: str,
+    course_path: str,
+    include_course_context: bool,
+    library_path: str = "",
+):
     _limit_study(user_id)
     focus = (focus_query or "").strip() or "main concepts"
-    ctx, cerr = _build_study_scope_context(user_id, opened_file_path, course_path, focus, include_course_context)
+    ctx, cerr = _build_study_scope_context(
+        user_id, opened_file_path, course_path, focus, include_course_context, library_path
+    )
     if cerr:
         return JSONResponse({"error": cerr}, status_code=400)
     summary_text, err = _run_study_ai(user_id, llm_pipeline.topic_summary, ctx)
@@ -150,7 +170,7 @@ def _summary(user_id: str, focus_query: str, opened_file_path: str, course_path:
     return JSONResponse(
         {
             "summary": summary_text,
-            "grounded_on_path": strip_storage_path(opened_file_path or ""),
+            "grounded_on_path": _grounded_on(opened_file_path, library_path),
             "context_chars": len(ctx or ""),
         }
     )
@@ -162,9 +182,10 @@ def study_summary(
     opened_file_path: str = Form(""),
     course_path: str = Form(""),
     include_course_context: bool = Form(True),
+    library_path: str = Form(""),
     user_id: SignedInUser = None,
 ):
-    return _summary(user_id, focus_query, opened_file_path, course_path, include_course_context)
+    return _summary(user_id, focus_query, opened_file_path, course_path, include_course_context, library_path)
 
 
 @router.post("/study/mindmap", deprecated=True)

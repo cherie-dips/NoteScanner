@@ -149,6 +149,59 @@ code checker (ESLint) before building, so commit the lockfile whenever you add o
   - explorer upload
   - study generation
 
+## 5) Shared course library and SDE-Prep (Study AI + Ask AI)
+
+[SDE-Prep](https://cherie-dips.github.io/SDE-Prep/) uses this backend in two ways:
+
+- **Study AI tab**: this frontend inside SDE-Prep (`/NoteScanner/?embed=sde`), in SDE-Prep's colours.
+  Both sites are on `cherie-dips.github.io`, so they share the sign-in.
+- **Ask AI** in SDE-Prep's Notes tab: questions, flashcards, quizzes and summaries about the course PDFs
+  shown there. Those PDFs are read **once** on the server into the shared course library
+  (`backend/library.py`) and searched by every student; nothing is copied per student.
+
+`https://cherie-dips.github.io` is already allowed by the default `CORS_ORIGINS`.
+
+### Index the course PDFs (once)
+
+From your computer, with `.env` pointing at Chroma Cloud and holding `SARVAM_API_KEY`:
+
+```bash
+python scripts/index_library.py --dry-run   # lists the PDFs and how many pieces need OCR, and the cost
+python scripts/index_library.py             # reads and indexes them
+```
+
+Handwritten and scanned pages are read with Sarvam Vision (≈ ₹0.5 per piece at Sarvam's listed price;
+`--dry-run` prints the total first). Typed pages are read for free. Without a Sarvam key the script uses
+Tesseract instead (free, much weaker on handwriting). Running it again only reads new or changed PDFs.
+
+Or from the server, as an admin (`ADMIN_EMAILS`): `POST /admin/library/sync` starts a sync in the
+background, and `GET /admin/library` shows each PDF's status.
+
+### Keep it up to date
+
+- After adding PDFs to the Supabase bucket, run the script again (or the admin sync), or
+- set `LIBRARY_SYNC_HOURS` (e.g. `24`) on the Space to check the bucket automatically.
+
+Library OCR counts towards `AI_MONTHLY_BUDGET`; when the budget is used up, PDFs that need OCR wait for
+the next sync (typed PDFs are still indexed).
+
+### Settings (all optional)
+
+| Setting | Default | What it does |
+|---|---|---|
+| `LIBRARY_ENABLED` | `true` | Turn the shared library (and Ask AI's course search) on or off |
+| `LIBRARY_SUPABASE_URL`, `LIBRARY_SUPABASE_KEY`, `LIBRARY_BUCKET` | SDE-Prep's bucket | Where the PDFs are (the key is the public, read-only anon key) |
+| `LIBRARY_PREFIXES` | `plaksha-university` | Bucket folders to index (comma-separated) |
+| `LIBRARY_OCR` | `auto` | `auto` (Sarvam if a key is set, else Tesseract), `sarvam`, `tesseract` or `off` |
+| `LIBRARY_SYNC_HOURS` | `0` | Re-check the bucket every N hours (`0` = only when started by hand) |
+
+### Verify
+
+1. `GET /library/status` lists the indexed PDFs.
+2. In SDE-Prep, open Notes → a course PDF → **Ask AI**: sign in, ask a question, click a source
+   (the PDF scrolls to that spot).
+3. Open the **Study AI** tab: you are already signed in, and a deck saved from Ask AI is under Review.
+
 ## Notes
 
 - Backend on free HF Space may sleep when idle (cold start delay on first request). The search model is

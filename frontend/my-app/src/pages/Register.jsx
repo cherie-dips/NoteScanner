@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { API_BASE } from "../config";
 import { setSessionId, markNewAccount, apiErrorMessage, errorText } from "../auth";
+import { APP_NAME, EMBEDDED } from "../embed";
 import "../index.css";
 
 export default function Register({ onRegister, onSwitchToLogin, onClose, onShowPrivacy }) {
@@ -25,6 +26,7 @@ export default function Register({ onRegister, onSwitchToLogin, onClose, onShowP
       formData.append("password", password);
       formData.append("name", name);
       formData.append("accepted_privacy", "true");
+      formData.append("app_name", APP_NAME); // the starter notes greet them by this name
       const url = `${API_BASE || "http://localhost:8000"}/register`;
       const res = await fetch(url, {
         method: "POST",
@@ -48,8 +50,10 @@ export default function Register({ onRegister, onSwitchToLogin, onClose, onShowP
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1 className="auth-title">NoteScanner</h1>
-        <p className="auth-subtitle">Create an account</p>
+        <h1 className="auth-title">{APP_NAME}</h1>
+        <p className="auth-subtitle">
+          {EMBEDDED ? "One free account for Study AI and Ask AI" : "Create an account"}
+        </p>
         <form onSubmit={handleSubmit} className="auth-form">
           <input
             type="email"

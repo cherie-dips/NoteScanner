@@ -85,6 +85,32 @@ def _env_bool(name: str, default: bool) -> bool:
     return _env_str(name, "true" if default else "false").lower() in ("1", "true", "yes", "on")
 
 
+# ---------- Shared course library (read once on the server, searched by every student) ----------
+# The PDFs behind SDE-Prep's Notes tab: a public Supabase Storage bucket. The key is that project's
+# publishable anon key, already served in plain text by SDE-Prep (js/notes-data.js); it can only
+# read the bucket. Never put a service_role key here.
+LIBRARY_ENABLED = _env_bool("LIBRARY_ENABLED", True)
+LIBRARY_SUPABASE_URL = _env_str("LIBRARY_SUPABASE_URL", "https://jlmzxsaysnvoxbutfkxw.supabase.co").rstrip("/")
+LIBRARY_SUPABASE_KEY = _env_str(
+    "LIBRARY_SUPABASE_KEY",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsbXp4c2F5c252b3hidXRma3h3Iiwicm9sZSI6"
+    "ImFub24iLCJpYXQiOjE3NzIwNDA2NTcsImV4cCI6MjA4NzYxNjY1N30.VvBgtpcmwuhoBSdjUKE5A3_9At-S2cCznCqfS_ECUkg",
+)
+LIBRARY_BUCKET = _env_str("LIBRARY_BUCKET", "Notes")
+# Top-level folders of the bucket to index (comma-separated). SDE-Prep shows only this category.
+LIBRARY_PREFIXES = tuple(
+    p.strip().strip("/") for p in _env_str("LIBRARY_PREFIXES", "plaksha-university").split(",") if p.strip()
+)
+# How handwritten and scanned pages are read: auto (Sarvam Vision when SARVAM_API_KEY is set, else
+# Tesseract), sarvam, tesseract, or off (only pages that already contain text).
+LIBRARY_OCR = _env_str("LIBRARY_OCR", "auto").lower()
+# Check the bucket for new or changed PDFs every N hours. 0 = only when started by hand
+# (scripts/index_library.py or the admin endpoint), because reading pages with Sarvam costs money.
+LIBRARY_SYNC_HOURS = _env_float("LIBRARY_SYNC_HOURS", 0)
+MIN_SCORE_LIBRARY_FILE = 0.20     # the course PDF the student has open (same bar as an open file)
+MIN_SCORE_LIBRARY_SUBJECT = 0.25  # the other PDFs of that course
+
+
 # ---------- Running a pilot ----------
 APP_TIMEZONE = _env_str("APP_TIMEZONE", "Asia/Kolkata")  # "today", streaks and reminder times use this
 STARTER_NOTES = _env_bool("STARTER_NOTES", True)          # new accounts get a "Getting started" folder

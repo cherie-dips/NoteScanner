@@ -11,9 +11,10 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend import alerts, mailer, onenote_sync, preferences, rate_limit, reminders, settings
+from backend import alerts, library, mailer, onenote_sync, preferences, rate_limit, reminders, settings
 from backend.auth import SESSION_HEADER
 from backend.routes import account, admin, chat, files, onenote, study
+from backend.routes import library as library_routes
 from backend.settings import MAX_CHAT_FILES_PER_SESSION, MAX_UPLOAD_MB, allowed_origins
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -22,6 +23,7 @@ logger = logging.getLogger("notescanner")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     reminders.start()  # daily review emails (only when SMTP is set up)
+    library.start()  # re-checks the shared course library (only when LIBRARY_SYNC_HOURS is set)
     yield
 
 
@@ -69,7 +71,7 @@ app.add_middleware(
     expose_headers=["Content-Disposition", "Retry-After"],
 )
 
-for module in (account, files, chat, study, onenote, admin):
+for module in (account, files, chat, study, onenote, admin, library_routes):
     app.include_router(module.router)
 
 

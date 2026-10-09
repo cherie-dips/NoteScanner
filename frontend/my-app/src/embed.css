@@ -1,0 +1,134 @@
+/* ─── Study AI mode ───────────────────────────────────────────────────────
+   NoteScanner inside SDE-Prep's "Study AI" tab (?embed=sde, see embed.js). SDE-Prep's palette and
+   type replace NoteScanner's so the two read as one site. Mostly the palette variables from the
+   top of index.css; below them, the few rules whose colours aren't variables. */
+html[data-embed="sde"] {
+  --ns-page: #0c0c0c;
+  --ns-bg: #0c0c0c;
+  --ns-bg-alt: #0c0c0c;
+  --ns-panel: #0c0c0c;           /* SDE-Prep puts side panels straight on the page */
+  --ns-raised: #141414;
+  --ns-raised-alt: #161616;
+  --ns-field: #161616;
+  --ns-hover: #1c1c1c;
+  --ns-border: #262626;
+  --ns-divider: #1a1a1a;
+  --ns-border-strong: #333333;
+  --ns-border-menu: #2a2a2a;
+  --ns-resizer: #0c0c0c;
+  --ns-row-hover: #141414;
+  --ns-selected: #1a1a1a;
+  --ns-landing-field: #141414;
+  --ns-landing-border: #262626;
+  --ns-primary: #25482f;         /* SDE-Prep's primary button */
+  --ns-primary-hover: #2c5638;
+  --ns-on-primary: #dbeede;
+  --ns-accent: #3f7350;
+  --ns-text: #dddddd;
+  --ns-text-strong: #f0f0f0;
+  --ns-text-bright: #f0f0f0;
+  --ns-text-code: #d4d4d4;
+  --ns-text-dim: #bbbbbb;
+  --ns-icon: #aaaaaa;
+  --ns-muted: #8a8a8a;
+  --ns-muted-2: #888888;
+  --ns-faint: #666666;
+  --ns-success: #4a9f65;
+  --ns-error: #c87b6e;
+  --ns-info: #6bb5e0;
+  --ns-link: #8bb8e0;
+  --ns-warn: #c8a85e;
+  --ns-tint: #111111;
+  --ns-tint-border: #262626;
+  --ns-scroll: #252525;
+  color-scheme: dark;
+}
+
+html[data-embed="sde"] body { background: #0c0c0c; font-family: -apple-system, system-ui, "Segoe UI", sans-serif; }
+html[data-embed="sde"] .app-container,
+html[data-embed="sde"] .vsc2-explorer,
+html[data-embed="sde"] .chat-page,
+html[data-embed="sde"] .modal-card {
+  font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
+}
+
+/* Layout: SDE-Prep's header sits above this frame. Panels sit on the page background like the
+   Notes tab, with the same breathing room at the edges, and quiet dividers that show on hover. */
+html[data-embed="sde"] .app-container { padding: 0 12px 12px; }
+html[data-embed="sde"] .app-container--mobile { padding: 0; }
+html[data-embed="sde"] .pane-resizer--vertical { width: 7px; }
+html[data-embed="sde"] .pane-resizer--vertical::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: #1a1a1a;
+}
+html[data-embed="sde"] .pane-resizer--vertical:hover::after,
+html[data-embed="sde"] .pane-resizer--vertical.pane-resizer--active::after { background: #3f7350; }
+html[data-embed="sde"] .pane-resizer--vertical:hover,
+html[data-embed="sde"] .pane-resizer--vertical.pane-resizer--active { background: transparent; }
+html[data-embed="sde"] .preview-header { border-bottom-color: #1a1a1a; }
+
+/* Selected file: SDE-Prep marks the current item with a grey bar, not a blue fill. */
+html[data-embed="sde"] .vsc2-row--selected { background: #1a1a1a !important; box-shadow: inset 2px 0 0 #666; }
+html[data-embed="sde"] .vsc2-row--selected:hover { background: #1f1f1f !important; }
+html[data-embed="sde"] .vsc2-row--drop { background: #141c17 !important; outline-color: #3f7350; }
+html[data-embed="sde"] .vsc2-explorer--file-drag .vsc2-tree { background: #101410; }
+html[data-embed="sde"] .vsc2-dropdown-item:hover,
+html[data-embed="sde"] .vsc2-context-menu-item:hover { background: #1c1c1c; }
+
+/* Sign-in box: on a dimmed page, like a dialog. */
+html[data-embed="sde"] .auth-overlay { background: rgba(0, 0, 0, 0.62); backdrop-filter: blur(2px); }
+html[data-embed="sde"] .auth-card { background: #111111; border-color: #262626; }
+html[data-embed="sde"] .auth-input { background: #161616; border-color: #2a2a2a; }
+html[data-embed="sde"] .auth-title { font-size: 1.35rem; font-weight: 600; color: #f0f0f0; }
+html[data-embed="sde"] .modal-card { background: #111111; border-color: #262626; }
+html[data-embed="sde"] .query-form-textarea-inline { font-family: inherit; font-size: 14px; }
+
+/* Signed-out page */
+html[data-embed="sde"] .chat-page-title { font-size: 1.6rem; }
+html[data-embed="sde"] .chat-page-lede {
+  max-width: 560px;
+  margin: -1.25rem 0 2rem;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #aaaaaa;
+}
+html[data-embed="sde"] .chat-page-input::placeholder,
+html[data-embed="sde"] .chat-page-message,
+html[data-embed="sde"] .chat-page-footer-link { color: #888888; }
+html[data-embed="sde"] .chat-page-message--info { color: #6bb5e0; }
+html[data-embed="sde"] .chat-page-message--success { color: #4a9f65; }
+html[data-embed="sde"] .chat-page-suggestion:hover { border-color: #333333; }
+
+/* Answers, study tools and the Today tab */
+html[data-embed="sde"] .query-markdown a { color: #8bb8e0; }
+html[data-embed="sde"] .query-message-bubble .query-sources-title { color: #8a8a8a; }
+html[data-embed="sde"] .query-message-bubble .query-source-item--link:hover,
+html[data-embed="sde"] .query-message-bubble .query-source-item--link:focus-visible { background: #1f1f1f; }
+html[data-embed="sde"] .query-input-icon:hover:not(:disabled) { background: #1f1f1f; }
+html[data-embed="sde"] .mcq-options button.correct { border-color: #2f5c3b; background: #141c17; }
+html[data-embed="sde"] .mcq-options button.wrong { border-color: #6b3a3a; background: #1c1313; }
+html[data-embed="sde"] .review-answer { border-top-color: #262626; }
+html[data-embed="sde"] .review-grade-btn--again { background: #4a2323; border-color: #5c2c2c; }
+html[data-embed="sde"] .review-grade-btn--hard { background: #4a3d1c; border-color: #5c4c23; }
+html[data-embed="sde"] .review-grade-btn--good { background: #25482f; border-color: #2f5c3b; }
+html[data-embed="sde"] .review-grade-btn--easy { background: #1f3a4f; border-color: #284a63; }
+html[data-embed="sde"] .settings-danger-btn { background: #5a2323; }
+html[data-embed="sde"] .settings-danger-btn:hover:not(:disabled) { background: #6b2a2a; }
+html[data-embed="sde"] .deck-delete-btn:hover,
+html[data-embed="sde"] .vsc2-context-menu-item--danger:hover { background: #2a1616; color: #c87b6e; }
+html[data-embed="sde"] .app-notice--success { border-color: #2f5c3b; }
+html[data-embed="sde"] .app-notice--error { border-color: #5c2c2c; }
+html[data-embed="sde"] .app-notice--info { border-color: #284a63; }
+html[data-embed="sde"] .today-activity-day { background: #141414; border-color: #262626; }
+html[data-embed="sde"] .today-activity-day--1 { background: #1a2e20; border-color: #1a2e20; }
+html[data-embed="sde"] .today-activity-day--2 { background: #224a2e; border-color: #224a2e; }
+html[data-embed="sde"] .today-activity-day--3 { background: #2f6b3f; border-color: #2f6b3f; }
+html[data-embed="sde"] .today-activity-day--4 { background: #4a9f65; border-color: #4a9f65; }
+html[data-embed="sde"] .vsc2-tree::-webkit-scrollbar,
+html[data-embed="sde"] .right-sidebar-content::-webkit-scrollbar { width: 4px; }

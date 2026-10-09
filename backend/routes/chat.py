@@ -7,7 +7,7 @@ import numpy as np
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from backend import alerts, chat_cache, llm_pipeline, preferences, rate_limit, uploads, usage
+from backend import alerts, chat_cache, library, llm_pipeline, preferences, rate_limit, uploads, usage
 from backend.deps import SignedInUser
 from backend.ingest_api import embed_texts
 from backend.paths import file_paths, get_vfs_tree_clean, strip_storage_path
@@ -113,6 +113,7 @@ def _prepare_question(
     course_path: str,
     include_course_context: bool,
     chat_session_id: str,
+    library_path: str = "",
 ) -> tuple[str, str, str, list[dict], SearchResult]:
     """Validate the question and find the note excerpts to answer it from (HTTP errors raise)."""
     q = (query or "").strip()
@@ -130,11 +131,15 @@ def _prepare_question(
     ephemeral = chat_cache.items(user_id, chat_session_id)
     hl = (highlight or "").strip()
     full_q = f'Regarding this selection:\n"""{hl}"""\n\n{q}' if hl else q
-    result = find_context(user_id, full_q, all_paths, opened, course, ephemeral, include_course_context)
+    result = find_context(
+        user_id, full_q, all_paths, opened, course, ephemeral, include_course_context, library_path=library_path
+    )
     if not result.selected:
         raise HTTPException(
             status_code=400,
-            detail="No notes found to answer from. Upload notes, open a file, or attach one with +.",
+            detail=library.NOT_READY
+            if library.scope_of(library_path)[1]
+            else "No notes found to answer from. Upload notes, open a file, or attach one with +.",
         )
     usage.record(user_id, questions=1)
     return q, full_q, opened, ephemeral, result
@@ -148,6 +153,8 @@ def _answer_metadata(q: str, opened: str, ephemeral: list[dict], result: SearchR
         "ephemeral_files_used": len(ephemeral),
         "selection_stage": result.stage,
         "score_ephemeral_best": result.best_scores.get("ephemeral", -1.0),
+        "score_library_file_best": result.best_scores.get("library_file", -1.0),
+        "score_library_subject_best": result.best_scores.get("library_subject", -1.0),
         "score_opened_best": result.best_scores.get("opened", -1.0),
         "score_course_best": result.best_scores.get("course", -1.0),
         "score_all_notes_best": result.best_scores.get("all_notes", -1.0),
@@ -162,10 +169,11 @@ def query_notes(
     course_path: str = Form(""),
     include_course_context: bool = Form(True),
     chat_session_id: str = Form(""),
+    library_path: str = Form(""),
     user_id: SignedInUser = None,
 ):
     q, full_q, opened, ephemeral, result = _prepare_question(
-        user_id, query, highlight, opened_file_path, course_path, include_course_context, chat_session_id
+        user_id, query, highlight, opened_file_path, course_path, include_course_context, chat_session_id, library_path
     )
     llm_pipeline.take_usage()
     answer, err = llm_pipeline.sarvam_rag_answer(full_q, result.context(), **preferences.language_kwargs(user_id))
@@ -184,14 +192,16 @@ def query_notes_stream(
     course_path: str = Form(""),
     include_course_context: bool = Form(True),
     chat_session_id: str = Form(""),
+    library_path: str = Form(""),
     user_id: SignedInUser = None,
 ):
     """
     Same as /query_folder, but the answer arrives as it's written. Newline-delimited JSON:
     {"type":"meta",...sources} then {"type":"delta","text":...}* then {"type":"done"} or {"type":"error"}.
+    `library_path` asks about a shared course PDF (see library.py) instead of an uploaded file.
     """
     q, full_q, opened, ephemeral, result = _prepare_question(
-        user_id, query, highlight, opened_file_path, course_path, include_course_context, chat_session_id
+        user_id, query, highlight, opened_file_path, course_path, include_course_context, chat_session_id, library_path
     )
     context = result.context()
     lang = preferences.language_kwargs(user_id)

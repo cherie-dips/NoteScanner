@@ -2,12 +2,15 @@
 Finding the note excerpts that answer a question.
 
 Search order: chat uploads (+ button) → the open file → other files in the same course folder →
-all other notes. Every stage is scored as cosine similarity (0..1), so stages can be compared.
+all other notes. When the question is about a shared course PDF (SDE-Prep's Notes tab sends its
+path), that PDF and then the rest of its course come first. Every stage is scored as cosine
+similarity (0..1), so stages can be compared.
 """
 from dataclasses import dataclass, field
 
 import numpy as np
 
+from backend import library
 from backend.chroma_store import collection_distance_space, distance_to_similarity, get_user_collection
 from backend.ingest_api import embed_texts
 from backend.settings import (
@@ -15,11 +18,14 @@ from backend.settings import (
     MIN_SCORE_ALL_NOTES,
     MIN_SCORE_CHAT_UPLOAD,
     MIN_SCORE_COURSE,
+    MIN_SCORE_LIBRARY_FILE,
+    MIN_SCORE_LIBRARY_SUBJECT,
     MIN_SCORE_OPEN_FILE,
     SOURCE_SCORE_WINDOW,
 )
 
 MAX_SELECTED = 8
+OPEN_LIBRARY_FILE_LEAD = 0.10  # ranking lead for the course PDF the student has open
 
 
 @dataclass
@@ -36,7 +42,10 @@ class SearchResult:
                 continue
             md = d.get("metadata") or {}
             label = md.get("path") or "chunk"
-            if md.get("page"):
+            if md.get("library"):
+                label = f"Course notes: {md.get('label') or label}"
+            # Most course PDFs are one long page: a page number would only add noise there.
+            if md.get("page") and int(md.get("pages") or 2) > 1:
                 label += f", page {md['page']}"
             if md.get("is_primary_authority"):
                 label += " (main source)"
@@ -126,6 +135,7 @@ def find_context(
     course: str,
     ephemeral: list[dict],
     include_other_notes: bool = True,
+    library_path: str = "",
 ) -> SearchResult:
     col = get_user_collection(user_id)
     space = collection_distance_space(col)
@@ -135,6 +145,28 @@ def find_context(
 
     eph_docs = _search_chat_uploads(ephemeral, q_vec)
     open_docs = _search_chunks(col, space, q_emb, {"path": opened}, all_set, 6) if opened in all_set else []
+
+    # Shared course library: the open course PDF and the other PDFs of the same course, ranked
+    # together with a small lead for the open PDF, so a lecture that clearly answers the question
+    # wins over a loosely related open PDF (course notes on one subject all score fairly high).
+    lib_file_docs: list[dict] = []
+    lib_subject_docs: list[dict] = []
+    lib_file, lib_subject = library.scope_of(library_path)
+    if lib_file:
+        lib_file_docs = library.search(q_emb, {"path": lib_file}, 6)
+    if lib_subject and (include_other_notes or not lib_file):
+        subject_where = {"subject": lib_subject}
+        if lib_file:
+            subject_where = {"$and": [subject_where, {"path": {"$ne": lib_file}}]}
+        lib_subject_docs = library.search(q_emb, subject_where, 24)[:MAX_SELECTED]
+    lib_docs = sorted(
+        [{**d, "_score": d["_score"] + OPEN_LIBRARY_FILE_LEAD} for d in lib_file_docs] + lib_subject_docs,
+        key=lambda d: d["_score"],
+        reverse=True,
+    )
+    from_open_pdf = bool(lib_docs) and lib_docs[0]["metadata"].get("path") == lib_file
+    lib_stage = "library_file" if from_open_pdf else "library_subject"
+    lib_min = MIN_SCORE_LIBRARY_FILE if from_open_pdf else MIN_SCORE_LIBRARY_SUBJECT
 
     # Course and "everything else" are selected with metadata filters (few predicates, no huge
     # path lists), then checked against the tree so deleted files never show up.
@@ -152,19 +184,24 @@ def find_context(
 
     stages = [
         ("ephemeral", eph_docs, MIN_SCORE_CHAT_UPLOAD),
+        (lib_stage, lib_docs, lib_min),
         ("opened", open_docs, MIN_SCORE_OPEN_FILE),
         ("course", course_docs, MIN_SCORE_COURSE),
         ("all_notes", other_docs, MIN_SCORE_ALL_NOTES),
     ]
+    scored = [*stages, ("library_file", lib_file_docs, 0), ("library_subject", lib_subject_docs, 0)]
     result = SearchResult(
-        best_scores={name: (round(docs[0]["_score"], 4) if docs else -1.0) for name, docs, _ in stages}
+        best_scores={name: (round(docs[0]["_score"], 4) if docs else -1.0) for name, docs, _ in scored}
     )
     # Use the highest-priority stage that is relevant enough; otherwise the best-scoring one.
     for name, docs, min_score in stages:
         if docs and docs[0]["_score"] >= min_score:
             result.stage, result.selected = name, _closest(docs)
             return result
-    available = [(name, docs) for name, docs, _ in stages if docs]
+    # A question about a course PDF never falls back to loosely related notes of the student's own
+    # (e.g. sample physics notes for a maths course): only the course library itself.
+    fallback = [(lib_stage, lib_docs, lib_min)] if lib_subject else stages
+    available = [(name, docs) for name, docs, _ in fallback if docs]
     if available:
         result.stage, docs = max(available, key=lambda s: s[1][0]["_score"])
         result.selected = _closest(docs)

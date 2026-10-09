@@ -7,6 +7,7 @@
  * Fallback: when showDirectoryPicker is unavailable, use OPFS (private browser storage).
  */
 
+import { APP_NAME } from "./embed";
 import { sanitizeVirtualPath } from "./virtualPath";
 import { registerLocalFile, getBlobUrlForPath } from "./localFileStore";
 
@@ -228,7 +229,7 @@ export async function linkNoteScannerFolder() {
   const ok = window.confirm(
     `Set up local files on your computer:\n\n` +
       `1. In Finder / File Explorer, create a new folder named "${RECOMMENDED_ROOT_FOLDER_NAME}" wherever you want (e.g. Documents or Desktop).\n\n` +
-      `2. Click OK here, then in the next dialog select that "${RECOMMENDED_ROOT_FOLDER_NAME}" folder and allow access so NoteScanner can save your courses there.`,
+      `2. Click OK here, then in the next dialog select that "${RECOMMENDED_ROOT_FOLDER_NAME}" folder and allow access so ${APP_NAME} can save your courses there.`,
   );
   if (!ok) return null;
 
@@ -254,7 +255,7 @@ export async function linkNoteScannerFolder() {
   const perm = await requestRootPermission(handle);
   if (perm !== "granted") {
     throw new Error(
-      "Read/write access to this folder was denied. Grant access so NoteScanner can save files there.",
+      `Read/write access to this folder was denied. Grant access so ${APP_NAME} can save files there.`,
     );
   }
   await saveRootHandle(handle);

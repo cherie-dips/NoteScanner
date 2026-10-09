@@ -291,10 +291,11 @@ def _read_parts(col, doc_id: str) -> str | None:
     raise RuntimeError(f"Stored document {doc_id} is incomplete")
 
 
-def _write_parts(col, doc_id: str, raw: str, kind: str) -> None:
+def _write_parts(col, doc_id: str, raw: str, kind: str, extra_meta: dict | None = None) -> None:
     """
     Write parts first under a new version, then switch the manifest to it in one upsert, then
     remove the previous version's parts. A failure at any step leaves the previous version intact.
+    `extra_meta` is stored on the manifest record (e.g. the shared library's per-file details).
     """
     old = col.get(ids=[doc_id], include=["metadatas"])
     old_meta = ((old.get("metadatas") or [{}])[0] or {}) if old.get("ids") else {}
@@ -313,7 +314,7 @@ def _write_parts(col, doc_id: str, raw: str, kind: str) -> None:
         ids=[doc_id],
         documents=[""],
         embeddings=[_dummy_embedding()],
-        metadatas=[{"kind": kind, "parts": len(pieces), "version": version}],
+        metadatas=[{**(extra_meta or {}), "kind": kind, "parts": len(pieces), "version": version}],
     )
     old_parts = int(old_meta.get("parts") or 0)
     old_version = str(old_meta.get("version") or "")

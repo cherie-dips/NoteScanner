@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiRequest, errorText } from "../auth";
+import { onShown } from "../embed";
 import { looksLikeFile } from "../studyUtils";
 
 function shortDay(day) {
@@ -32,6 +33,9 @@ export default function StudyToday({ onReviewNow, onPracticeFile, onMockTest }) 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Back on the Study AI tab: a deck may have been saved from Ask AI in the meantime.
+  useEffect(() => onShown(() => void load()), [load]);
 
   if (loading && !data) return <p className="study-hint">Loading…</p>;
   if (error && !data) {

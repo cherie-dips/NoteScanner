@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { APP_NAME, EMBEDDED } from "../embed";
 
 /*
  * DRAFT privacy note. The project owner must review this text with the college (data office / IT)
@@ -34,10 +35,10 @@ export default function PrivacyNote({ onClose }) {
         </button>
         <h2 id="privacy-note-title" className="modal-title">Privacy note</h2>
         <div className="privacy-body">
-          <h3>What NoteScanner stores</h3>
+          <h3>What {APP_NAME} stores</h3>
           <ul>
             <li>Your account: email address, name, and your password in scrambled form (a hash, not the password itself).</li>
-            <li>The text NoteScanner reads from your notes, and search data made from that text.</li>
+            <li>The text {APP_NAME} reads from your notes, and search data made from that text.</li>
             <li>Your flashcard decks and review history, quiz results, and any ratings or feedback you send.</li>
             <li>Simple usage counts (for example how many questions you asked today), used to keep the service running and within budget.</li>
           </ul>
@@ -46,7 +47,13 @@ export default function PrivacyNote({ onClose }) {
           <ul>
             <li>Notes, text and study data are stored in a Chroma Cloud database.</li>
             <li>To read PDFs and photos and to write answers, flashcards and quizzes, your note text and questions are sent to Sarvam AI.</li>
-            <li>The NoteScanner server runs on Hugging Face hosting.</li>
+            <li>The {APP_NAME} server runs on Hugging Face hosting.</li>
+            {EMBEDDED && (
+              <li>
+                Ask AI in the Notes tab uses the same account. Questions asked there, and the course notes
+                they are about, are handled in the same way.
+              </li>
+            )}
             <li>Your original PDFs and images are not uploaded for storage: they stay on your device. Only the text read from them is kept.</li>
           </ul>
 

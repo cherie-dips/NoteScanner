@@ -9,6 +9,11 @@ due for review, and build a day-by-day revision plan before an exam.
 
 ![NoteScanner](frontend/my-app/public/app-page.png)
 
+**Also part of [SDE-Prep](https://cherie-dips.github.io/SDE-Prep/).** There it is the **Study AI** tab
+(this app in SDE-Prep's colours, with the same sign-in), and it powers **Ask AI** in SDE-Prep's Notes tab:
+questions, flashcards, quizzes and summaries about the course PDFs shown there, which the server reads
+once into a shared course library. See [The shared course library](#4-the-shared-course-library).
+
 ---
 
 ## The problem
@@ -65,6 +70,12 @@ Telugu).
 - Saved decks with spaced review (Again / Hard / Good / Easy). Export a deck as CSV for Anki.
 - **Today** dashboard: cards due, streak, weak topics (from quiz scores), last 14 days of activity.
 - **Exam mode**: a day-by-day revision plan up to an exam date, and timed mock tests from a whole course folder.
+
+**Course library (SDE-Prep)**
+- Course PDFs from SDE-Prep's Notes tab are read once on the server and shared by every student.
+- Ask about the PDF that's open: answers come from that PDF first, then the rest of its course, and each
+  source says where in the PDF it is (SDE-Prep scrolls there when it's clicked).
+- Flashcards, quizzes and summaries from a course PDF; saved decks show up in the Review tab here.
 
 **Accounts and running a pilot**
 - Sign up, sign in, change or reset password (by email), delete account.
@@ -171,6 +182,33 @@ Saved flashcards follow the same idea as Anki: each time you review a card you g
 (Again / Hard / Good / Easy), and NoteScanner decides when to show it next. Easy cards come back
 after longer and longer gaps; cards you forget come back in 10 minutes.
 
+### 4. The shared course library
+
+SDE-Prep's Notes tab shows course PDFs from a public Supabase Storage bucket. Instead of every student
+uploading the same PDFs, the server reads each one **once** and keeps it in two shared collections.
+
+```
+ scripts/index_library.py  (or POST /admin/library/sync, or every LIBRARY_SYNC_HOURS)
+        │
+        ▼
+ List the bucket. Skip PDFs whose eTag hasn't changed; remove PDFs that were deleted.
+        │
+        ▼
+ For each page:
+   • typed text      → PyMuPDF (free)
+   • handwriting/scan → cut into page-shaped pieces at blank rows (no line of writing is split),
+                        read with Sarvam Vision, at most 10 pieces per job (Sarvam's limit);
+                        Tesseract when there's no Sarvam key
+        │
+        ▼
+ Cut into passages and embed them, like a note. Each passage remembers its page and how far down
+ the page it starts, so SDE-Prep can scroll to the exact spot.
+```
+
+When SDE-Prep asks a question it sends `library_path` (the open PDF). The search ranks that PDF and the
+rest of its course together, with a small lead for the open PDF, so a lecture that clearly answers the
+question wins. The student's own notes are used only when they really match.
+
 ---
 
 ## Tech stack
@@ -210,8 +248,10 @@ NoteScanner/
 │   │   ├── chat.py              Asking questions, chat attachments (+)
 │   │   ├── study.py             Flashcards, quizzes, summaries, decks, Today, exam mode
 │   │   ├── onenote.py           OneNote connect and import
-│   │   └── admin.py             Usage and feedback page for admins
+│   │   ├── admin.py             Usage and feedback page for admins
+│   │   └── library.py           Shared course library: status, admin sync
 │   │
+│   ├── library.py               Shared course library: reads course PDFs once, searches them
 │   ├── uploads.py               Reads text out of files; background upload queue
 │   ├── extract_api.py           Tesseract backup for photos
 │   ├── pages.py                 Works out page numbers for PDF text
@@ -240,11 +280,13 @@ NoteScanner/
 │       │                        StudyPanel, StudyDecks, StudyToday, ExamMode, FileTextView,
 │       │                        upload progress, settings, feedback, privacy note, admin page
 │       ├── auth.js, config.js   Sign-in state and the server address
+│       ├── embed.js, embed.css  Study AI mode: inside SDE-Prep, with its name and colours
 │       ├── localFileStore.js    Keeps your original files on your device for viewing
 │       ├── localDiskFolder.js   Optional: mirror your folders into a "NoteScanner" folder on your computer
 │       └── studyApi.js, studyUtils.js, chatHistory.js, virtualPath.js   Small helpers
 │
-├── scripts/                     backup_chroma.py, restore_chroma.py, answer_quality.py
+├── scripts/                     backup_chroma.py, restore_chroma.py, answer_quality.py,
+│                                index_library.py (index the shared course library)
 ├── evals/                       Sample questions for the answer-quality test (see evals/README.md)
 ├── tests/                       Server tests (pytest)
 ├── .github/workflows/           Tests, deploys, weekly backup, uptime check
@@ -347,6 +389,7 @@ Step-by-step instructions, backups and checks are in [DEPLOYMENT.md](DEPLOYMENT.
 | Security and sizes | `CORS_ORIGINS` (localhost + `https://cherie-dips.github.io`), `SESSION_TTL_DAYS` (14), `MAX_UPLOAD_MB` (20), `MAX_CHAT_UPLOAD_CHARS` (300000), `CHAT_CACHE_TTL_SECONDS` (7200), `USER_DOCUMENT_MAX_BYTES` (2000000), `RATE_LIMIT_MULTIPLIER` (1) |
 | Password-reset email | `FRONTEND_URL`, `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_STARTTLS` (true). Turned on only when `SMTP_HOST` and `SMTP_FROM` are set. |
 | OneNote | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` |
+| Course library | `LIBRARY_ENABLED` (true), `LIBRARY_SUPABASE_URL` / `LIBRARY_SUPABASE_KEY` / `LIBRARY_BUCKET` (SDE-Prep's public bucket), `LIBRARY_PREFIXES` (`plaksha-university`), `LIBRARY_OCR` (`auto`), `LIBRARY_SYNC_HOURS` (0 = by hand). See [DEPLOYMENT.md](DEPLOYMENT.md#5-shared-course-library-and-sde-prep-study-ai--ask-ai). |
 | Pilot | `ADMIN_EMAILS`, `ALERT_WEBHOOK_URL`, `AI_PRICE_PER_PAGE`, `AI_PRICE_PER_1K_INPUT_TOKENS`, `AI_PRICE_PER_1K_OUTPUT_TOKENS`, `AI_PRICE_CURRENCY` (INR), `AI_MONTHLY_BUDGET` (0 = off), `APP_TIMEZONE` (Asia/Kolkata), `REMINDER_HOUR` (8), `REMINDERS_ENABLED` (true), `STARTER_NOTES` (true) |
 
 Search thresholds (how close a match must be before it's used) are the `MIN_SCORE_*` values in
@@ -383,6 +426,7 @@ that saves data or uses AI needs a signed-in user. Full interactive docs are at 
 | Chat | `POST /query_folder`, `POST /query_folder/stream`, `POST /chat/upload_ephemeral`, `POST /chat/session/clear` |
 | Study | `POST /study/generate`, `POST /study/summary` (old name `/study/mindmap` still works), `POST /study/decks`, `GET /study/decks`, `GET /study/decks/{id}/cards`, `POST /study/cards/{id}/review`, `DELETE /study/decks/{id}`, `GET /study/decks/{id}/export`, `GET /study/dashboard`, `POST /study/mcq_results`, `POST /study/exam`, `POST /study/exam_plan`, `GET /study/exams`, `DELETE /study/exams/{id}` |
 | Feedback and admin | `POST /feedback`, `GET /admin/stats`, `GET /admin/feedback` (admins only) |
+| Course library | `GET /library/status` (public), `GET /admin/library`, `POST /admin/library/sync` (admins only). `library_path` on `/query_folder`, `/query_folder/stream`, `/study/generate` and `/study/summary` asks about a course PDF |
 | OneNote | `GET /integrations/onenote/status`, `GET /integrations/onenote/auth_url`, `GET /integrations/onenote/callback`, `POST /integrations/onenote/sync` |
 | Service | `GET /health`, `GET /config` |
 
@@ -399,6 +443,8 @@ lines with pieces of the answer, then `done` (or `error`).
 | `user_{id}_vfs` | The folder tree and file details |
 | `user_{id}_study` | Decks, cards and their review schedule, quiz results, exam plans |
 | `usage_daily`, `feedback` | Daily usage counts per student; ratings and feedback |
+| `library_notes` | Shared course library: passages, fingerprints, and path / course / page / position |
+| `library_documents` | Shared course library: one record per PDF (status, page counts) and its full text |
 | `onenote_tokens`, `onenote_oauth_states` | OneNote connection |
 
 Chroma Cloud allows at most 300 records per read or write, 16 KB per record and ids of up to 128 bytes.

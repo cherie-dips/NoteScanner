@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from backend import feedback, rate_limit, settings, usage
 from backend.chroma_store import user_get_by_id
 from backend.deps import SignedInUser
+from backend.library import USAGE_ID as LIBRARY_USAGE_ID
 
 router = APIRouter()
 
@@ -65,6 +66,8 @@ def admin_stats(days: int = 7, user_id: SignedInUser = None):
     for r in records:
         for k in usage.COUNTERS:
             totals[k] += int(r.get(k) or 0)
+        if r.get("user_id") == LIBRARY_USAGE_ID:
+            continue  # pages the shared library sent to OCR: counted in the totals, not a student
         row = daily.get(r.get("day"))
         if row is not None:
             row["active_users"] += 1

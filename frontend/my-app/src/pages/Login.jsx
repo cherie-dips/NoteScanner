@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { API_BASE } from "../config";
 import { setSessionId, apiErrorMessage, errorText } from "../auth";
+import { APP_NAME, EMBEDDED } from "../embed";
 import "../index.css";
 
 export default function Login({
@@ -74,7 +75,7 @@ export default function Login({
   return (
     <div className="auth-page">
       <div className="auth-card">
-        <h1 className="auth-title">NoteScanner</h1>
+        <h1 className="auth-title">{APP_NAME}</h1>
         {mode === "forgot" ? (
           <>
             <p className="auth-subtitle">Reset your password</p>
@@ -102,7 +103,9 @@ export default function Login({
           </>
         ) : (
           <>
-            <p className="auth-subtitle">Sign in to your account</p>
+            <p className="auth-subtitle">
+              {EMBEDDED ? "One account for Study AI and Ask AI" : "Sign in to your account"}
+            </p>
             {notice && <p className="auth-info auth-notice">{notice}</p>}
             <form onSubmit={handleSubmit} className="auth-form">
               <input

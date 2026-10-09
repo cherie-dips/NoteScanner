@@ -100,6 +100,7 @@ def register(
     password: str = Form(...),
     name: str = Form(""),
     accepted_privacy: str = Form(""),
+    app_name: str = Form(""),
 ):
     rate_limit.check("register", client_ip(request), *LIMIT_REGISTER_PER_IP)
     if accepted_privacy.strip().lower() not in ("1", "true", "yes", "on"):
@@ -124,7 +125,7 @@ def register(
         )
         session_id = create_session(user_id)
         if settings.STARTER_NOTES:
-            starter_notes.add_starter_notes_in_background(user_id)
+            starter_notes.add_starter_notes_in_background(user_id, (app_name or "").strip())
         return JSONResponse({"session_id": session_id, "user_id": user_id, "name": display_name})
     except Exception as e:
         return _database_error("Sign-up", e)

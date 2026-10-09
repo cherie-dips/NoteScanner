@@ -55,17 +55,29 @@ STARTER_FILES = (
     ("Sample - Newton's laws of motion.md", SAMPLE_PHYSICS),
 )
 
+# The name the student signed up under: "Study AI" is NoteScanner inside SDE-Prep's Study AI tab.
+APP_NAMES = ("NoteScanner", "Study AI")
 
-def add_starter_notes(user_id: str) -> None:
+
+def starter_files(app_name: str = "NoteScanner") -> tuple[tuple[str, str], ...]:
+    app = app_name if app_name in APP_NAMES else "NoteScanner"
+    if app == "NoteScanner":
+        return STARTER_FILES
+    return ((f"Welcome to {app}.md", WELCOME.replace("NoteScanner", app)), *STARTER_FILES[1:])
+
+
+def add_starter_notes(user_id: str, app_name: str = "NoteScanner") -> None:
     """Save the starter files for a new account (no AI calls; only local embeddings)."""
     from backend.uploads import save_note_text
 
-    for name, text in STARTER_FILES:
+    for name, text in starter_files(app_name):
         try:
             save_note_text(user_id, STARTER_FOLDER, name, text)
         except Exception:
             logger.exception("Could not add starter note %s for %s", name, user_id)
 
 
-def add_starter_notes_in_background(user_id: str) -> None:
-    threading.Thread(target=add_starter_notes, args=(user_id,), name="starter-notes", daemon=True).start()
+def add_starter_notes_in_background(user_id: str, app_name: str = "NoteScanner") -> None:
+    threading.Thread(
+        target=add_starter_notes, args=(user_id, app_name), name="starter-notes", daemon=True
+    ).start()

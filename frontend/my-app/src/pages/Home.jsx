@@ -21,6 +21,7 @@ import { registerLocalFile, getBlobUrlForPath, forgetAllLocalFiles } from "../lo
 import { hydrateLocalPreviewFromMirror } from "../localDiskFolder";
 import { clearHistory } from "../chatHistory";
 import { API_BASE } from "../config";
+import { EMBEDDED } from "../embed";
 import "../index.css";
 import { HiOutlineUserCircle } from "react-icons/hi2";
 
@@ -457,7 +458,10 @@ export default function Home({ onLogout, onSignInClick, signedIn, serverConfig =
       return (
         <div className="preview-placeholder">
           <div className="preview-placeholder-icon">📄</div>
-          <p>Preview isn't available for this file type. Switch to Text to see what NoteScanner read.</p>
+          <p>
+            Preview isn't available for this file type. Switch to Text to see what
+            {EMBEDDED ? " was read from it." : " NoteScanner read."}
+          </p>
         </div>
       );
     }
@@ -465,7 +469,7 @@ export default function Home({ onLogout, onSignInClick, signedIn, serverConfig =
       return (
         <div className="preview-placeholder">
           <div className="preview-placeholder-icon">📄</div>
-          <p>Opening from your NoteScanner folder…</p>
+          <p>{EMBEDDED ? "Opening from your folder on disk…" : "Opening from your NoteScanner folder…"}</p>
         </div>
       );
     }
@@ -474,7 +478,7 @@ export default function Home({ onLogout, onSignInClick, signedIn, serverConfig =
         <div className="preview-placeholder-icon">📄</div>
         <p>
           The original file isn't saved on this device. Choose it to view it here, or switch to Text
-          to see what NoteScanner read from it.
+          to see {EMBEDDED ? "what was read from it" : "what NoteScanner read from it"}.
         </p>
         <input
           ref={previewAttachRef}

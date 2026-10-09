@@ -5,9 +5,11 @@ import {
   ensureGuestId,
   isSignedIn,
   signOutOnServer,
+  SESSION_KEY,
   SIGNED_OUT_EVENT,
 } from "./auth";
 import { DEFAULT_SERVER_CONFIG, loadServerConfig } from "./config";
+import { onHostMessage, takeAuthRequest } from "./embed";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ResetPassword from "./pages/ResetPassword";
@@ -37,7 +39,9 @@ function clearResetTokenFromUrl() {
 function App() {
   const [signedIn, setSignedIn] = useState(isSignedIn());
   const [resetToken, setResetToken] = useState(readResetToken);
-  const [authView, setAuthView] = useState(() => (readResetToken() ? "reset" : null));
+  const [authView, setAuthView] = useState(() =>
+    readResetToken() ? "reset" : isSignedIn() ? null : takeAuthRequest(),
+  );
   const [loginNotice, setLoginNotice] = useState("");
   const [serverConfig, setServerConfig] = useState(DEFAULT_SERVER_CONFIG);
   const [privacyOpen, setPrivacyOpen] = useState(false);
@@ -68,6 +72,30 @@ function App() {
     window.addEventListener(SIGNED_OUT_EVENT, handleSignedOut);
     return () => window.removeEventListener(SIGNED_OUT_EVENT, handleSignedOut);
   }, []);
+
+  useEffect(() => {
+    // Signed in or out somewhere else on this site (another tab, or SDE-Prep around Study AI).
+    const onStorage = (e) => {
+      if (e.key !== null && e.key !== SESSION_KEY) return;
+      const now = isSignedIn();
+      setSignedIn(now);
+      if (now) setAuthView((v) => (v === "reset" ? v : null));
+      else ensureGuestId();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect(
+    () =>
+      // SDE-Prep's "Sign in" button while Study AI is already open.
+      onHostMessage((msg) => {
+        if (msg.type === "studyai:auth" && !isSignedIn()) {
+          setAuthView(msg.view === "register" ? "register" : "login");
+        }
+      }),
+    [],
+  );
 
   const onLogin = useCallback(() => {
     setSignedIn(true);

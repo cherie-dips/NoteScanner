@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { API_BASE } from "../config";
 import { authFetch, apiErrorMessage, errorText } from "../auth";
+import { EMBEDDED } from "../embed";
 
 const MAX_TEXT_CHARS = 500000;
 
@@ -80,7 +81,9 @@ export default function FileTextView({ path }) {
         <span className="file-text-hint">
           {editing
             ? "Fix mistakes or add notes, then save. Search, chat and study tools will use this text."
-            : "Text NoteScanner read from this file."}
+            : EMBEDDED
+              ? "Text read from this file."
+              : "Text NoteScanner read from this file."}
         </span>
         {editing ? (
           <>

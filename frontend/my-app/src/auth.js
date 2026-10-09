@@ -1,7 +1,9 @@
 import { API_BASE } from "./config";
+import { APP_NAME } from "./embed";
 import { getBlobUrlForPath } from "./localFileStore";
 
-const SESSION_KEY = "notescanner_session_id";
+/** localStorage key of the sign-in. SDE-Prep's "Ask AI" panel reads it too (same origin). */
+export const SESSION_KEY = "notescanner_session_id";
 const GUEST_KEY = "notescanner_guest_id";
 const USER_NAME_KEY = "notescanner_user_name";
 const USER_ID_KEY = "notescanner_user_id";
@@ -12,7 +14,7 @@ const GUEST_HEADER = "X-Guest-Id";
 export const SIGNED_OUT_EVENT = "notescanner:signed-out";
 
 export const NETWORK_ERROR_MESSAGE =
-  "Can't reach the NoteScanner server. Please check your connection and try again.";
+  `Can't reach the ${APP_NAME} server. Please check your connection and try again.`;
 
 export function getSessionId() {
   return localStorage.getItem(SESSION_KEY);
