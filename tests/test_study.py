@@ -84,3 +84,43 @@ def test_schedule_grows_intervals():
     assert intervals[0] == 1.0 and intervals[1] == 3.0 and intervals[2] > 3.0 and intervals[3] > intervals[2]
     lapsed = study_store.schedule(meta, "again", 0)
     assert lapsed["reps"] == 0 and lapsed["lapses"] == 1 and lapsed["ease"] < meta["ease"]
+
+
+class FakeResponse:
+    def __init__(self, status, body):
+        self.status_code, self._body, self.text = status, body, json.dumps(body)
+
+    def json(self):
+        return self._body
+
+
+def test_study_tools_use_the_current_model_without_long_reasoning(monkeypatch):
+    sent = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        sent.append(json)
+        return FakeResponse(200, {"choices": [{"message": {"content": "A short summary of the notes on Newton's laws."}}]})
+
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")
+    monkeypatch.setenv("SARVAM_MODEL_STUDY", "")  # blank settings fall back to the default
+    monkeypatch.setattr(llm_pipeline.httpx, "post", fake_post)
+    text, err = llm_pipeline.topic_summary("Newton's laws of motion: inertia, F = ma, action and reaction. " * 5)
+    assert err is None and text
+    assert sent[0]["model"] == "sarvam-105b"
+    assert "reasoning_effort" in sent[0] and sent[0]["reasoning_effort"] is None  # null = reasoning off
+
+
+def test_retired_model_setting_falls_back_to_the_default(monkeypatch):
+    models = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        models.append(json["model"])
+        if json["model"] == "sarvam-30b":
+            return FakeResponse(400, {"error": {"message": "Model 'sarvam-30b' has been deprecated."}})
+        return FakeResponse(200, {"choices": [{"message": {"content": "Summary of the notes about forces and motion."}}]})
+
+    monkeypatch.setenv("SARVAM_API_KEY", "test-key")
+    monkeypatch.setenv("SARVAM_MODEL_STUDY", "sarvam-30b")
+    monkeypatch.setattr(llm_pipeline.httpx, "post", fake_post)
+    text, err = llm_pipeline.topic_summary("Newton's laws of motion: inertia, F = ma, action and reaction. " * 5)
+    assert err is None and text and models == ["sarvam-30b", "sarvam-105b"]

@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 
 # Chat models (see https://docs.sarvam.ai/api-reference-docs/api-guides-tutorials/chat-completion/overview)
 _DEFAULT_MODEL_RAG = "sarvam-105b"
-_DEFAULT_MODEL_STUDY = "sarvam-30b"
+_DEFAULT_MODEL_STUDY = "sarvam-105b"  # Sarvam retired sarvam-30b in 2026
+# Flashcards, quizzes and summaries don't need the model's long reasoning: without it they take
+# about a second instead of up to a minute, and cost a fraction of the tokens.
+_STUDY_REASONING_EFFORT = "off"
 
 _GROUNDING_STOPWORDS = {
     "about", "after", "again", "also", "among", "another", "because", "before", "being", "between",
@@ -64,11 +67,11 @@ def _chat_base_url() -> str:
 
 
 def _model_rag() -> str:
-    return os.getenv("SARVAM_MODEL_RAG", _DEFAULT_MODEL_RAG).strip()
+    return (os.getenv("SARVAM_MODEL_RAG") or "").strip() or _DEFAULT_MODEL_RAG
 
 
 def _model_study() -> str:
-    return os.getenv("SARVAM_MODEL_STUDY", _DEFAULT_MODEL_STUDY).strip()
+    return (os.getenv("SARVAM_MODEL_STUDY") or "").strip() or _DEFAULT_MODEL_STUDY
 
 
 def _sarvam_chat_complete(
@@ -77,11 +80,17 @@ def _sarvam_chat_complete(
     model: str,
     max_tokens: int,
     temperature: float,
+    reasoning_effort: str | None = None,
 ) -> tuple[str | None, str | None]:
     key = _sarvam_api_key()
     if not key:
         return None, "SARVAM_API_KEY not configured"
     url = f"{_chat_base_url()}/v1/chat/completions"
+    payload = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+    if reasoning_effort == "off":
+        payload["reasoning_effort"] = None  # Sarvam: an explicit null turns reasoning off
+    elif reasoning_effort:
+        payload["reasoning_effort"] = reasoning_effort  # low | medium (default) | high | max
     try:
         r = httpx.post(
             url,
@@ -89,18 +98,23 @@ def _sarvam_chat_complete(
                 "Authorization": f"Bearer {key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            },
+            json=payload,
             timeout=300.0,
         )
         data = r.json()
         if r.status_code >= 400:
             err = data.get("error") if isinstance(data.get("error"), dict) else {}
             msg = err.get("message") if isinstance(err, dict) else None
+            if "deprecated" in (msg or "").lower() and model != _DEFAULT_MODEL_RAG:
+                # A model setting that Sarvam has since retired: keep working on the default model.
+                logger.warning("Sarvam model %s is retired (%s); using %s", model, msg, _DEFAULT_MODEL_RAG)
+                return _sarvam_chat_complete(
+                    messages,
+                    model=_DEFAULT_MODEL_RAG,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    reasoning_effort=reasoning_effort,
+                )
             return None, msg or r.text or f"HTTP {r.status_code}"
         choices = data.get("choices") or []
         if not choices:
@@ -531,6 +545,7 @@ def cheap_study_json(context: str, task: str, n: int, language: str = "English")
             model=_model_study(),
             max_tokens=8192,
             temperature=0.4,
+            reasoning_effort=_STUDY_REASONING_EFFORT,
         )
         if err:
             last_err = err
@@ -587,8 +602,9 @@ def topic_summary(context: str, language: str = "English") -> tuple[str | None, 
         raw, err = _sarvam_chat_complete(
             [{"role": "user", "content": msg}],
             model=_model_study(),
-            max_tokens=1024,
+            max_tokens=4096,  # room for the model's reasoning as well as the ~150-word summary
             temperature=0.2,
+            reasoning_effort=_STUDY_REASONING_EFFORT,
         )
         if err:
             last_err = err

@@ -166,7 +166,7 @@ find a passage about "rate of reaction".
  Collect the text: the open file, plus short parts of other files in the same course folder
         │
         ▼
- Send it to Sarvam AI (sarvam-30b):
+ Send it to Sarvam AI (sarvam-105b, with low reasoning effort):
    • Flashcards and quizzes: about 70% straight from the notes, about 30% on closely
      related topics from the same subject (those are labelled "📖 Beyond notes")
    • Quizzes: 4 options each, one-line explanation, answer order shuffled
@@ -224,7 +224,7 @@ question wins. The student's own notes are used only when they really match.
 | **Search by meaning** | `all-MiniLM-L6-v2` (sentence-transformers) | A small free model, running on our server, that makes the "meaning fingerprints". |
 | | LangChain text splitter | Cuts notes into short passages. |
 | **Storage** | ChromaDB (Chroma Cloud or self-hosted) | Stores note passages and finds the closest matches to a question. Also stores accounts, folders, decks and usage. |
-| **Writing answers** | Sarvam AI chat models | `sarvam-105b` writes answers; `sarvam-30b` writes flashcards, quizzes and summaries. |
+| **Writing answers** | Sarvam AI chat models | `sarvam-105b` writes answers, flashcards, quizzes and summaries (study tools use low reasoning effort). |
 | **Passwords** | bcrypt | Passwords are stored scrambled, never as plain text. |
 | **Hosting** | GitHub Pages | Hosts the website. |
 | | Hugging Face Spaces (Docker) | Hosts the server. |
@@ -385,7 +385,7 @@ Step-by-step instructions, backups and checks are in [DEPLOYMENT.md](DEPLOYMENT.
 
 | Area | Settings |
 |---|---|
-| Sarvam AI | `SARVAM_API_BASE`, `SARVAM_MODEL_RAG` (`sarvam-105b`), `SARVAM_MODEL_STUDY` (`sarvam-30b`), `SARVAM_DOC_INTEL_LANGUAGE` (`en-IN`), `SARVAM_DOC_INTEL_TIMEOUT` (180 s) |
+| Sarvam AI | `SARVAM_API_BASE`, `SARVAM_MODEL_RAG` (`sarvam-105b`), `SARVAM_MODEL_STUDY` (`sarvam-105b`), `SARVAM_DOC_INTEL_LANGUAGE` (`en-IN`), `SARVAM_DOC_INTEL_TIMEOUT` (180 s) |
 | Security and sizes | `CORS_ORIGINS` (localhost + `https://cherie-dips.github.io`), `SESSION_TTL_DAYS` (14), `MAX_UPLOAD_MB` (20), `MAX_CHAT_UPLOAD_CHARS` (300000), `CHAT_CACHE_TTL_SECONDS` (7200), `USER_DOCUMENT_MAX_BYTES` (2000000), `RATE_LIMIT_MULTIPLIER` (1) |
 | Password-reset email | `FRONTEND_URL`, `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_STARTTLS` (true). Turned on only when `SMTP_HOST` and `SMTP_FROM` are set. |
 | OneNote | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` |

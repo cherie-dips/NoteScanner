@@ -117,6 +117,22 @@ def test_multi_page_pdfs_cite_the_page(client, user, course):
     assert ", page 1]" in j["answer"] or ", page 2]" in j["answer"]
 
 
+def test_open_pdf_is_kept_when_many_course_passages_score_a_little_higher(client, user, bucket):
+    open_pdf = "plaksha-university/design-analysis-algorithms/class-notes/L10.pdf"
+    exam = "plaksha-university/design-analysis-algorithms/exam-practice/Class Test 1.pdf"
+    bucket.put(open_pdf, text_pdf("Polynomial evaluation with Homer's rule: n multiplications and n additions. " * 3))
+    bucket.put(exam, text_pdf(*["Time complexity of an algorithm: count the basic operations as n grows. " * 8] * 3))
+    library.sync()
+    j = ask(client, user, "What is the time complexity of Horner's rule?", open_pdf).json()
+    paths = [d["metadata"]["path"] for d in j["source_documents"]]
+    assert paths[0] == open_pdf  # the PDF being read comes first in the answer's context
+
+
+def test_unrelated_open_pdf_is_not_forced_in(client, user, course):
+    j = ask(client, user, "What is a tree in graph theory?", L1).json()
+    assert L1 not in {d["metadata"]["path"] for d in j["source_documents"]}
+
+
 def test_students_own_notes_are_the_last_fallback(client, user, upload, course):
     upload(user["headers"], "ml.md", b"Gradient descent updates weights against the gradient of the loss. " * 8)
     j = ask(client, user, "How does gradient descent update the weights?", L1).json()

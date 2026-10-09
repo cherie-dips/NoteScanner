@@ -26,6 +26,8 @@ from backend.settings import (
 
 MAX_SELECTED = 8
 OPEN_LIBRARY_FILE_LEAD = 0.10  # ranking lead for the course PDF the student has open
+OPEN_PDF_KEEP = 3              # passages of the open PDF always sent when it is nearly as relevant...
+OPEN_PDF_KEEP_GAP = 0.25       # ...as the best passage of its course (within this much)
 
 
 @dataclass
@@ -197,6 +199,7 @@ def find_context(
     for name, docs, min_score in stages:
         if docs and docs[0]["_score"] >= min_score:
             result.stage, result.selected = name, _closest(docs)
+            _keep_open_pdf(result, lib_file_docs, lib_subject_docs)
             return result
     # A question about a course PDF never falls back to loosely related notes of the student's own
     # (e.g. sample physics notes for a maths course): only the course library itself.
@@ -205,5 +208,22 @@ def find_context(
     if available:
         result.stage, docs = max(available, key=lambda s: s[1][0]["_score"])
         result.selected = _closest(docs)
+        _keep_open_pdf(result, lib_file_docs, lib_subject_docs)
     return result
+
+
+def _keep_open_pdf(result: SearchResult, file_docs: list[dict], subject_docs: list[dict]) -> None:
+    """
+    The student asked while reading a course PDF: make sure its best passages reach the answer when
+    it is nearly as relevant as the rest of the course, even if many other passages score a little
+    higher (e.g. exam answers that all mention "time complexity"). They go first in the context.
+    """
+    if not file_docs or not result.stage.startswith("library"):
+        return
+    best_other = subject_docs[0]["_score"] if subject_docs else -1.0
+    if file_docs[0]["_score"] < max(MIN_SCORE_LIBRARY_FILE, best_other - OPEN_PDF_KEEP_GAP):
+        return
+    keep = [d for d in file_docs[:OPEN_PDF_KEEP] if d["_score"] >= MIN_SCORE_LIBRARY_FILE]
+    kept_ids = {d["id"] for d in keep}
+    result.selected = (keep + [d for d in result.selected if d["id"] not in kept_ids])[:MAX_SELECTED]
 
