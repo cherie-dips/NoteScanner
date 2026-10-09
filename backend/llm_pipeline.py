@@ -390,11 +390,23 @@ def sarvam_rag_answer_stream(question: str, context: str, language: str = "Engli
         raise LLMError(str(e)) from e
 
 
+# Models often write LaTeX inside JSON strings with single backslashes: "\cdot" is an invalid JSON
+# escape (the whole reply fails to parse), and "\frac" / "\theta" / "\neq" parse silently as a form
+# feed / tab / newline. A backslash followed by two or more lowercase letters is a LaTeX command (a
+# real line break is "\n" before a capital, digit or space), so it is escaped before parsing.
+_LATEX_COMMAND = re.compile(r"(?<!\\)\\(?=[a-z]{2,})")
+_BAD_JSON_ESCAPE = re.compile(r'(?<!\\)\\(?![\\"/bfnrtu])')
+
+
+def _repair_latex_escapes(raw: str) -> str:
+    return _BAD_JSON_ESCAPE.sub(r"\\\\", _LATEX_COMMAND.sub(r"\\\\", raw))
+
+
 def _parse_json_loose(raw: str) -> Any:
     raw = raw.strip()
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```\s*$", "", raw)
-    return json.loads(raw)
+    return json.loads(_repair_latex_escapes(raw))
 
 
 def _tokens(text: str) -> list[str]:

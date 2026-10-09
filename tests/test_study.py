@@ -124,3 +124,19 @@ def test_retired_model_setting_falls_back_to_the_default(monkeypatch):
     monkeypatch.setattr(llm_pipeline.httpx, "post", fake_post)
     text, err = llm_pipeline.topic_summary("Newton's laws of motion: inertia, F = ma, action and reaction. " * 5)
     assert err is None and text and models == ["sarvam-30b", "sarvam-105b"]
+
+
+def test_latex_with_single_backslashes_is_read_correctly():
+    parse = llm_pipeline._parse_json_loose
+    assert parse(r'[{"front": "$x \cdot y$, $\alpha$", "back": "b"}]')[0]["front"] == r"$x \cdot y$, $\alpha$"
+    # \f, \t, \n, \b would otherwise turn into control characters
+    assert parse(r'[{"front": "$\frac{a}{b}$, $\theta \neq \beta$", "back": "b"}]')[0]["front"] == r"$\frac{a}{b}$, $\theta \neq \beta$"
+    assert parse('[{"front": "one\\nTwo", "back": "a\\\\frac{1}{2}"}]')[0] == {"front": "one\nTwo", "back": r"a\frac{1}{2}"}
+
+
+def test_flashcards_survive_model_latex(client, user, opened_file, monkeypatch):
+    reply = r'```json' + "\n" + r'[{"front": "Write Newton’s second law", "back": "$\vec{F} = m \cdot \vec{a}$", "source": "notes"}]' + "\n```"
+    monkeypatch.setattr(llm_pipeline, "_sarvam_chat_complete", lambda *a, **k: (reply, None))
+    r = client.post("/study/generate", data={"task": "flashcards", "count": "1", "opened_file_path": opened_file}, headers=user["headers"])
+    assert r.status_code == 200, r.text
+    assert r.json()["items"][0]["back"] == r"$\vec{F} = m \cdot \vec{a}$"
