@@ -21,7 +21,7 @@ import { registerLocalFile, getBlobUrlForPath, forgetAllLocalFiles } from "../lo
 import { hydrateLocalPreviewFromMirror } from "../localDiskFolder";
 import { clearHistory } from "../chatHistory";
 import { API_BASE } from "../config";
-import { EMBEDDED } from "../embed";
+import { EMBEDDED, onHostMessage } from "../embed";
 import "../index.css";
 import { HiOutlineUserCircle } from "react-icons/hi2";
 
@@ -151,6 +151,19 @@ export default function Home({ onLogout, onSignInClick, signedIn, serverConfig =
     );
     return () => timers.forEach(clearTimeout);
   }, [signedIn]);
+
+  // Study AI mode: the profile menu lives in SDE-Prep's header, which asks for these windows.
+  useEffect(
+    () =>
+      onHostMessage((msg) => {
+        if (msg.type !== "studyai:open") return;
+        if (msg.what === "settings") setSettingsOpen(true);
+        else if (msg.what === "feedback") setFeedbackOpen(true);
+        else if (msg.what === "admin") setAdminOpen(true);
+        else if (msg.what === "privacy") onShowPrivacy?.();
+      }),
+    [onShowPrivacy],
+  );
 
   // Short messages (e.g. OneNote sync result) disappear on their own.
   useEffect(() => {
@@ -504,7 +517,8 @@ export default function Home({ onLogout, onSignInClick, signedIn, serverConfig =
 
   return (
     <div className={`app-container${isMobile ? " app-container--mobile" : ""}`}>
-      <div className="app-header">
+      {/* In Study AI mode SDE-Prep's header shows the profile menu instead. */}
+      {!EMBEDDED && <div className="app-header">
         {signedIn ? (
           <div className="profile-wrap" ref={profileRef}>
             <button
@@ -601,7 +615,7 @@ export default function Home({ onLogout, onSignInClick, signedIn, serverConfig =
             Sign in
           </button>
         )}
-      </div>
+      </div>}
 
       {notice && (
         <div className={`app-notice app-notice--${notice.type}`} role="status">

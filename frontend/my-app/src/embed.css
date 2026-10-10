@@ -70,7 +70,12 @@ html[data-embed="sde"] .pane-resizer--vertical:hover::after,
 html[data-embed="sde"] .pane-resizer--vertical.pane-resizer--active::after { background: #3f7350; }
 html[data-embed="sde"] .pane-resizer--vertical:hover,
 html[data-embed="sde"] .pane-resizer--vertical.pane-resizer--active { background: transparent; }
-html[data-embed="sde"] .preview-header { border-bottom-color: #1a1a1a; }
+html[data-embed="sde"] .preview-header { border-bottom-color: #1a1a1a; padding-right: 12px; }
+/* No floating profile button here (it is in SDE-Prep's header), so no room is kept for it. */
+html[data-embed="sde"] .right-sidebar-content { padding-top: 10px; }
+html[data-embed="sde"] .tips-card { margin: 8px 0 0; }
+html[data-embed="sde"] .app-container--mobile .tips-card { margin: 6px 8px 0; }
+html[data-embed="sde"] .app-container--mobile .vsc2-header { padding-right: 8px; }
 
 /* Selected file: SDE-Prep marks the current item with a grey bar, not a blue fill. */
 html[data-embed="sde"] .vsc2-row--selected { background: #1a1a1a !important; box-shadow: inset 2px 0 0 #666; }
