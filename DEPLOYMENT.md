@@ -149,13 +149,13 @@ code checker (ESLint) before building, so commit the lockfile whenever you add o
   - explorer upload
   - study generation
 
-## 5) Shared course library and SDE-Prep (Study AI + Ask AI)
+## 5) Shared course library and Interview.ai (Study AI + Ask AI)
 
-[SDE-Prep](https://cherie-dips.github.io/SDE-Prep/) uses this backend in two ways:
+[Interview.ai](https://cherie-dips.github.io/SDE-Prep/) uses this backend in two ways:
 
-- **Study AI tab**: this frontend inside SDE-Prep (`/NoteScanner/?embed=sde`), in SDE-Prep's colours.
+- **Study AI tab**: this frontend inside Interview.ai (`/NoteScanner/?embed=sde`), in Interview.ai's colours.
   Both sites are on `cherie-dips.github.io`, so they share the sign-in.
-- **Ask AI** in SDE-Prep's Notes tab: questions, flashcards, quizzes and summaries about the course PDFs
+- **Ask AI** in Interview.ai's Notes tab: questions, flashcards, quizzes and summaries about the course PDFs
   shown there. Those PDFs are read **once** on the server into the shared course library
   (`backend/library.py`) and searched by every student; nothing is copied per student.
 
@@ -190,7 +190,7 @@ the next sync (typed PDFs are still indexed).
 | Setting | Default | What it does |
 |---|---|---|
 | `LIBRARY_ENABLED` | `true` | Turn the shared library (and Ask AI's course search) on or off |
-| `LIBRARY_SUPABASE_URL`, `LIBRARY_SUPABASE_KEY`, `LIBRARY_BUCKET` | SDE-Prep's bucket | Where the PDFs are (the key is the public, read-only anon key) |
+| `LIBRARY_SUPABASE_URL`, `LIBRARY_SUPABASE_KEY`, `LIBRARY_BUCKET` | Interview.ai's bucket | Where the PDFs are (the key is the public, read-only anon key) |
 | `LIBRARY_PREFIXES` | `plaksha-university` | Bucket folders to index (comma-separated) |
 | `LIBRARY_OCR` | `auto` | `auto` (Sarvam if a key is set, else Tesseract), `sarvam`, `tesseract` or `off` |
 | `LIBRARY_SYNC_HOURS` | `0` | Re-check the bucket every N hours (`0` = only when started by hand) |
@@ -198,7 +198,7 @@ the next sync (typed PDFs are still indexed).
 ### Verify
 
 1. `GET /library/status` lists the indexed PDFs.
-2. In SDE-Prep, open Notes → a course PDF → **Ask AI**: sign in, ask a question, click a source
+2. In Interview.ai, open Notes → a course PDF → **Ask AI**: sign in, ask a question, click a source
    (the PDF scrolls to that spot).
 3. Open the **Study AI** tab: you are already signed in, and a deck saved from Ask AI is under Review.
 

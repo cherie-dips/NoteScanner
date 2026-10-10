@@ -1,5 +1,5 @@
 /* ─── Palette ─────────────────────────────────────────────────────────────
-   NoteScanner's own colours. embed.css swaps them for SDE-Prep's when the app runs inside SDE-Prep's
+   NoteScanner's own colours. embed.css swaps them for Interview.ai's when the app runs inside Interview.ai's
    Study AI tab (html[data-embed="sde"]), so the two look like one site. */
 :root {
   --ns-page: #0d0d0d;            /* signed-out landing page */

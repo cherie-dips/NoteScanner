@@ -2,7 +2,7 @@ import { API_BASE } from "./config";
 import { APP_NAME } from "./embed";
 import { getBlobUrlForPath } from "./localFileStore";
 
-/** localStorage key of the sign-in. SDE-Prep's "Ask AI" panel reads it too (same origin). */
+/** localStorage key of the sign-in. Interview.ai's "Ask AI" panel reads it too (same origin). */
 export const SESSION_KEY = "notescanner_session_id";
 const GUEST_KEY = "notescanner_guest_id";
 const USER_NAME_KEY = "notescanner_user_name";

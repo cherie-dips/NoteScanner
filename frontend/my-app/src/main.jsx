@@ -6,7 +6,7 @@ import App from './App.jsx'
 import { APP_NAME, EMBEDDED } from './embed'
 
 if (EMBEDDED) {
-  // embed.css switches the palette to SDE-Prep's under this attribute.
+  // embed.css switches the palette to Interview.ai's under this attribute.
   document.documentElement.dataset.embed = 'sde'
   document.title = APP_NAME
 }

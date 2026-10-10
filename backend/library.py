@@ -1,7 +1,7 @@
 """
 The shared course library: course PDFs read once on the server and searched by every student.
 
-The PDFs come from a public Supabase Storage bucket (the Notes tab of SDE-Prep; see LIBRARY_* in
+The PDFs come from a public Supabase Storage bucket (the Notes tab of Interview.ai; see LIBRARY_* in
 settings.py). They live in two shared collections, so nothing is copied per student:
 
 - library_notes      search passages + embeddings; metadata: path, subject, page and `y` (where on

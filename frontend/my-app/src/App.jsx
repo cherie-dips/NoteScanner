@@ -74,7 +74,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // Signed in or out somewhere else on this site (another tab, or SDE-Prep around Study AI).
+    // Signed in or out somewhere else on this site (another tab, or Interview.ai around Study AI).
     const onStorage = (e) => {
       if (e.key !== null && e.key !== SESSION_KEY) return;
       const now = isSignedIn();
@@ -88,7 +88,7 @@ function App() {
 
   useEffect(
     () =>
-      // SDE-Prep's "Sign in" button while Study AI is already open.
+      // Interview.ai's "Sign in" button while Study AI is already open.
       onHostMessage((msg) => {
         if (msg.type === "studyai:auth" && !isSignedIn()) {
           setAuthView(msg.view === "register" ? "register" : "login");

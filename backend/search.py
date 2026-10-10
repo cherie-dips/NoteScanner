@@ -2,7 +2,7 @@
 Finding the note excerpts that answer a question.
 
 Search order: chat uploads (+ button) → the open file → other files in the same course folder →
-all other notes. When the question is about a shared course PDF (SDE-Prep's Notes tab sends its
+all other notes. When the question is about a shared course PDF (Interview.ai's Notes tab sends its
 path), that PDF and then the rest of its course come first. Every stage is scored as cosine
 similarity (0..1), so stages can be compared.
 """

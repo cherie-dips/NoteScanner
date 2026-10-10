@@ -86,8 +86,8 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 # ---------- Shared course library (read once on the server, searched by every student) ----------
-# The PDFs behind SDE-Prep's Notes tab: a public Supabase Storage bucket. The key is that project's
-# publishable anon key, already served in plain text by SDE-Prep (js/notes-data.js); it can only
+# The PDFs behind Interview.ai's Notes tab: a public Supabase Storage bucket. The key is that project's
+# publishable anon key, already served in plain text by Interview.ai (js/notes-data.js); it can only
 # read the bucket. Never put a service_role key here.
 LIBRARY_ENABLED = _env_bool("LIBRARY_ENABLED", True)
 LIBRARY_SUPABASE_URL = _env_str("LIBRARY_SUPABASE_URL", "https://jlmzxsaysnvoxbutfkxw.supabase.co").rstrip("/")
@@ -97,7 +97,7 @@ LIBRARY_SUPABASE_KEY = _env_str(
     "ImFub24iLCJpYXQiOjE3NzIwNDA2NTcsImV4cCI6MjA4NzYxNjY1N30.VvBgtpcmwuhoBSdjUKE5A3_9At-S2cCznCqfS_ECUkg",
 )
 LIBRARY_BUCKET = _env_str("LIBRARY_BUCKET", "Notes")
-# Top-level folders of the bucket to index (comma-separated). SDE-Prep shows only this category.
+# Top-level folders of the bucket to index (comma-separated). Interview.ai shows only this category.
 LIBRARY_PREFIXES = tuple(
     p.strip().strip("/") for p in _env_str("LIBRARY_PREFIXES", "plaksha-university").split(",") if p.strip()
 )

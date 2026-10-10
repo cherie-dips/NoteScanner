@@ -1,12 +1,12 @@
 /* ─── Study AI mode ───────────────────────────────────────────────────────
-   NoteScanner inside SDE-Prep's "Study AI" tab (?embed=sde, see embed.js). SDE-Prep's palette and
+   NoteScanner inside Interview.ai's "Study AI" tab (?embed=sde, see embed.js). Interview.ai's palette and
    type replace NoteScanner's so the two read as one site. Mostly the palette variables from the
    top of index.css; below them, the few rules whose colours aren't variables. */
 html[data-embed="sde"] {
   --ns-page: #0c0c0c;
   --ns-bg: #0c0c0c;
   --ns-bg-alt: #0c0c0c;
-  --ns-panel: #0c0c0c;           /* SDE-Prep puts side panels straight on the page */
+  --ns-panel: #0c0c0c;           /* Interview.ai puts side panels straight on the page */
   --ns-raised: #141414;
   --ns-raised-alt: #161616;
   --ns-field: #161616;
@@ -20,7 +20,7 @@ html[data-embed="sde"] {
   --ns-selected: #1a1a1a;
   --ns-landing-field: #141414;
   --ns-landing-border: #262626;
-  --ns-primary: #25482f;         /* SDE-Prep's primary button */
+  --ns-primary: #25482f;         /* Interview.ai's primary button */
   --ns-primary-hover: #2c5638;
   --ns-on-primary: #dbeede;
   --ns-accent: #3f7350;
@@ -52,7 +52,7 @@ html[data-embed="sde"] .modal-card {
   font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
 }
 
-/* Layout: SDE-Prep's header sits above this frame. Panels sit on the page background like the
+/* Layout: Interview.ai's header sits above this frame. Panels sit on the page background like the
    Notes tab, with the same breathing room at the edges, and quiet dividers that show on hover. */
 html[data-embed="sde"] .app-container { padding: 0 12px 12px; }
 html[data-embed="sde"] .app-container--mobile { padding: 0; }
@@ -71,13 +71,13 @@ html[data-embed="sde"] .pane-resizer--vertical.pane-resizer--active::after { bac
 html[data-embed="sde"] .pane-resizer--vertical:hover,
 html[data-embed="sde"] .pane-resizer--vertical.pane-resizer--active { background: transparent; }
 html[data-embed="sde"] .preview-header { border-bottom-color: #1a1a1a; padding-right: 12px; }
-/* No floating profile button here (it is in SDE-Prep's header), so no room is kept for it. */
+/* No floating profile button here (it is in Interview.ai's header), so no room is kept for it. */
 html[data-embed="sde"] .right-sidebar-content { padding-top: 10px; }
 html[data-embed="sde"] .tips-card { margin: 8px 0 0; }
 html[data-embed="sde"] .app-container--mobile .tips-card { margin: 6px 8px 0; }
 html[data-embed="sde"] .app-container--mobile .vsc2-header { padding-right: 8px; }
 
-/* Selected file: SDE-Prep marks the current item with a grey bar, not a blue fill. */
+/* Selected file: Interview.ai marks the current item with a grey bar, not a blue fill. */
 html[data-embed="sde"] .vsc2-row--selected { background: #1a1a1a !important; box-shadow: inset 2px 0 0 #666; }
 html[data-embed="sde"] .vsc2-row--selected:hover { background: #1f1f1f !important; }
 html[data-embed="sde"] .vsc2-row--drop { background: #141c17 !important; outline-color: #3f7350; }

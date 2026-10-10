@@ -54,7 +54,7 @@ export default function ChatPage({ onSignInClick, onShowPrivacy }) {
   return (
     <div className="chat-page">
       <header className="chat-page-header">
-        {/* Inside SDE-Prep the site header already names the page. */}
+        {/* Inside Interview.ai the site header already names the page. */}
         <div className="chat-page-brand">{EMBEDDED ? "" : "NoteScanner"}</div>
         <button type="button" className="auth-btn chat-page-signin" onClick={onSignInClick}>
           Sign in

@@ -1,5 +1,5 @@
 """
-Index the shared course library: the course PDFs behind SDE-Prep's Notes tab (see backend/library.py).
+Index the shared course library: the course PDFs behind Interview.ai's Notes tab (see backend/library.py).
 
     python scripts/index_library.py --dry-run     # what would be read, and how many pieces need OCR
     python scripts/index_library.py               # read and index new or changed PDFs

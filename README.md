@@ -9,8 +9,8 @@ due for review, and build a day-by-day revision plan before an exam.
 
 ![NoteScanner](frontend/my-app/public/app-page.png)
 
-**Also part of [SDE-Prep](https://cherie-dips.github.io/SDE-Prep/).** There it is the **Study AI** tab
-(this app in SDE-Prep's colours, with the same sign-in), and it powers **Ask AI** in SDE-Prep's Notes tab:
+**Also part of [Interview.ai](https://cherie-dips.github.io/SDE-Prep/).** There it is the **Study AI** tab
+(this app in Interview.ai's colours, with the same sign-in), and it powers **Ask AI** in Interview.ai's Notes tab:
 questions, flashcards, quizzes and summaries about the course PDFs shown there, which the server reads
 once into a shared course library. See [The shared course library](#4-the-shared-course-library).
 
@@ -71,10 +71,10 @@ Telugu).
 - **Today** dashboard: cards due, streak, weak topics (from quiz scores), last 14 days of activity.
 - **Exam mode**: a day-by-day revision plan up to an exam date, and timed mock tests from a whole course folder.
 
-**Course library (SDE-Prep)**
-- Course PDFs from SDE-Prep's Notes tab are read once on the server and shared by every student.
+**Course library (Interview.ai)**
+- Course PDFs from Interview.ai's Notes tab are read once on the server and shared by every student.
 - Ask about the PDF that's open: answers come from that PDF first, then the rest of its course, and each
-  source says where in the PDF it is (SDE-Prep scrolls there when it's clicked).
+  source says where in the PDF it is (Interview.ai scrolls there when it's clicked).
 - Flashcards, quizzes and summaries from a course PDF; saved decks show up in the Review tab here.
 
 **Accounts and running a pilot**
@@ -184,7 +184,7 @@ after longer and longer gaps; cards you forget come back in 10 minutes.
 
 ### 4. The shared course library
 
-SDE-Prep's Notes tab shows course PDFs from a public Supabase Storage bucket. Instead of every student
+Interview.ai's Notes tab shows course PDFs from a public Supabase Storage bucket. Instead of every student
 uploading the same PDFs, the server reads each one **once** and keeps it in two shared collections.
 
 ```
@@ -202,10 +202,10 @@ uploading the same PDFs, the server reads each one **once** and keeps it in two 
         │
         ▼
  Cut into passages and embed them, like a note. Each passage remembers its page and how far down
- the page it starts, so SDE-Prep can scroll to the exact spot.
+ the page it starts, so Interview.ai can scroll to the exact spot.
 ```
 
-When SDE-Prep asks a question it sends `library_path` (the open PDF). The search ranks that PDF and the
+When Interview.ai asks a question it sends `library_path` (the open PDF). The search ranks that PDF and the
 rest of its course together, with a small lead for the open PDF, so a lecture that clearly answers the
 question wins. The student's own notes are used only when they really match.
 
@@ -280,7 +280,7 @@ NoteScanner/
 │       │                        StudyPanel, StudyDecks, StudyToday, ExamMode, FileTextView,
 │       │                        upload progress, settings, feedback, privacy note, admin page
 │       ├── auth.js, config.js   Sign-in state and the server address
-│       ├── embed.js, embed.css  Study AI mode: inside SDE-Prep, with its name and colours
+│       ├── embed.js, embed.css  Study AI mode: inside Interview.ai, with its name and colours
 │       ├── localFileStore.js    Keeps your original files on your device for viewing
 │       ├── localDiskFolder.js   Optional: mirror your folders into a "NoteScanner" folder on your computer
 │       └── studyApi.js, studyUtils.js, chatHistory.js, virtualPath.js   Small helpers
@@ -389,7 +389,7 @@ Step-by-step instructions, backups and checks are in [DEPLOYMENT.md](DEPLOYMENT.
 | Security and sizes | `CORS_ORIGINS` (localhost + `https://cherie-dips.github.io`), `SESSION_TTL_DAYS` (14), `MAX_UPLOAD_MB` (20), `MAX_CHAT_UPLOAD_CHARS` (300000), `CHAT_CACHE_TTL_SECONDS` (7200), `USER_DOCUMENT_MAX_BYTES` (2000000), `RATE_LIMIT_MULTIPLIER` (1) |
 | Password-reset email | `FRONTEND_URL`, `SMTP_HOST`, `SMTP_PORT` (587), `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_STARTTLS` (true). Turned on only when `SMTP_HOST` and `SMTP_FROM` are set. |
 | OneNote | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` |
-| Course library | `LIBRARY_ENABLED` (true), `LIBRARY_SUPABASE_URL` / `LIBRARY_SUPABASE_KEY` / `LIBRARY_BUCKET` (SDE-Prep's public bucket), `LIBRARY_PREFIXES` (`plaksha-university`), `LIBRARY_OCR` (`auto`), `LIBRARY_SYNC_HOURS` (0 = by hand). See [DEPLOYMENT.md](DEPLOYMENT.md#5-shared-course-library-and-sde-prep-study-ai--ask-ai). |
+| Course library | `LIBRARY_ENABLED` (true), `LIBRARY_SUPABASE_URL` / `LIBRARY_SUPABASE_KEY` / `LIBRARY_BUCKET` (Interview.ai's public bucket), `LIBRARY_PREFIXES` (`plaksha-university`), `LIBRARY_OCR` (`auto`), `LIBRARY_SYNC_HOURS` (0 = by hand). See [DEPLOYMENT.md](DEPLOYMENT.md#5-shared-course-library-and-interviewai-study-ai--ask-ai). |
 | Pilot | `ADMIN_EMAILS`, `ALERT_WEBHOOK_URL`, `AI_PRICE_PER_PAGE`, `AI_PRICE_PER_1K_INPUT_TOKENS`, `AI_PRICE_PER_1K_OUTPUT_TOKENS`, `AI_PRICE_CURRENCY` (INR), `AI_MONTHLY_BUDGET` (0 = off), `APP_TIMEZONE` (Asia/Kolkata), `REMINDER_HOUR` (8), `REMINDERS_ENABLED` (true), `STARTER_NOTES` (true) |
 
 Search thresholds (how close a match must be before it's used) are the `MIN_SCORE_*` values in

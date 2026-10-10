@@ -55,7 +55,7 @@ STARTER_FILES = (
     ("Sample - Newton's laws of motion.md", SAMPLE_PHYSICS),
 )
 
-# The name the student signed up under: "Study AI" is NoteScanner inside SDE-Prep's Study AI tab.
+# The name the student signed up under: "Study AI" is NoteScanner inside Interview.ai's Study AI tab.
 APP_NAMES = ("NoteScanner", "Study AI")
 
 

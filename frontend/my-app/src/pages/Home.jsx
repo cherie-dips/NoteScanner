@@ -152,7 +152,7 @@ export default function Home({ onLogout, onSignInClick, signedIn, serverConfig =
     return () => timers.forEach(clearTimeout);
   }, [signedIn]);
 
-  // Study AI mode: the profile menu lives in SDE-Prep's header, which asks for these windows.
+  // Study AI mode: the profile menu lives in Interview.ai's header, which asks for these windows.
   useEffect(
     () =>
       onHostMessage((msg) => {
@@ -517,7 +517,7 @@ export default function Home({ onLogout, onSignInClick, signedIn, serverConfig =
 
   return (
     <div className={`app-container${isMobile ? " app-container--mobile" : ""}`}>
-      {/* In Study AI mode SDE-Prep's header shows the profile menu instead. */}
+      {/* In Study AI mode Interview.ai's header shows the profile menu instead. */}
       {!EMBEDDED && <div className="app-header">
         {signedIn ? (
           <div className="profile-wrap" ref={profileRef}>
